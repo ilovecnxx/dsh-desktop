@@ -1,0 +1,17 @@
+{
+  "name": "dsh-desktop",
+  "productName": "DeepSeek Harness",
+  "version": "1.2.2",
+  "description": "DeepSeek Harness desktop client for Linux with one-click self-update",
+  "main": "main/main.js",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "install:app": "bash scripts/install-app.sh",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "electron": "^44.9.3"
+  }
+}

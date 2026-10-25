@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PORT="${DSH_WEB_PORT:-3080}"
+RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+LOG="$HOME/.dsh/web.log"
+LOCK="$HOME/.dsh/web.lock"
+
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "$RUNTIME/bus" ]]; then
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME/bus"
+fi
+if [[ -z "${WAYLAND_DISPLAY:-}" && -z "${DISPLAY:-}" && -S "$RUNTIME/wayland-0" ]]; then
+  export XDG_RUNTIME_DIR="$RUNTIME"
+  export WAYLAND_DISPLAY=wayland-0
+fi
+
+mkdir -p "$(dirname "$LOG")"
+if ! curl -sS --max-time 2 -o /dev/null "http://127.0.0.1:${PORT}/"; then
+  exec 9>"$LOCK"
+  locked=0
+  for _ in $(seq 1 120); do
+    if flock -n 9; then locked=1; break; fi
+    if curl -sS --max-time 1 -o /dev/null "http://127.0.0.1:${PORT}/"; then break; fi
+    sleep 0.25
+  done
+  if [[ "$locked" == 1 ]]; then
+    # 其他启动器可能在等待锁期间已经完成启动。
+    if ! curl -sS --max-time 2 -o /dev/null "http://127.0.0.1:${PORT}/"; then
+      # 清掉桌面客户端的测试/壳参数，避免它们污染独立网页版服务。
+      nohup env \
+        -u DSH_DESKTOP_EXIT_AFTER_MS \
+        -u DSH_DESKTOP_NO_TRAY \
+        -u DSH_DESKTOP_X11 \
+        -u DSH_DESKTOP_TEST_UPGRADE \
+        -u DSH_DESKTOP_TEST_SHELL_UPDATE \
+        -u DSH_DESKTOP_TEST_KILL_SERVER_MS \
+        -u DSH_DESKTOP_TEST_STOP_SERVER_MS \
+        /usr/bin/dsh web --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null 9>&- &
+      for _ in $(seq 1 120); do
+        if curl -sS --max-time 1 -o /dev/null "http://127.0.0.1:${PORT}/"; then break; fi
+        sleep 0.25
+      done
+    fi
+    flock -u 9
+  fi
+  exec 9>&-
+fi
+
+# 从新到旧校验 token；不能按文件参数顺序取最后一条旧日志。
+URL="$(python3 - "$PORT" <<'PYTOKEN'
+import pathlib,re,sys,urllib.request,urllib.error
+port=int(sys.argv[1]);home=pathlib.Path.home()
+files=[home/'.dsh/web.log',home/'.config/dsh-desktop/server.log']
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*args,**kwargs): return None
+opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
+for path in sorted((p for p in files if p.is_file()),key=lambda p:p.stat().st_mtime,reverse=True):
+    with path.open('rb') as f:
+        f.seek(max(0,path.stat().st_size-65536));data=f.read().decode('utf-8','replace')
+    tokens=re.findall(r'http://127\.0\.0\.1:'+str(port)+r'/\?token=[A-Za-z0-9_-]+',data)
+    for url in list(dict.fromkeys(reversed(tokens)))[:8]:
+        try: response=opener.open(url,timeout=2)
+        except urllib.error.HTTPError as err: response=err
+        except (OSError,urllib.error.URLError): continue
+        with response:
+            if response.code in (302,303) and any(c.startswith('dsh-auth-') for c in response.headers.get_all('Set-Cookie',[])):
+                print(url);sys.exit(0)
+print('没有找到当前服务的有效登录地址，请查看 ~/.dsh/web.log',file=sys.stderr)
+sys.exit(1)
+PYTOKEN
+)"
+if [[ "${1:-}" == "--print-url" ]]; then printf '%s\n' "$URL"; exit; fi
+exec xdg-open "$URL"

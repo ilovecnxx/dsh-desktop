@@ -1,0 +1,20 @@
+# 依赖与运行时
+node_modules/
+electron/
+
+# 本机验证产物（Electron 缓存、日志等）
+verification/
+
+# 客户端自更新 / 优化前的本地备份
+backups/
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+.npm/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+*.swp
+*~
