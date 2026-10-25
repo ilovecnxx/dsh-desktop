@@ -183,3 +183,7 @@ npm test        # node --test，覆盖服务生命周期、配置原子写入、
 
 本项目是社区自建的 Linux 客户端，与 DeepSeek 官方无隶属关系；`DeepSeek Harness`
 及相关名称、图标归其各自权利人所有。
+
+---
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
