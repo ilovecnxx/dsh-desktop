@@ -195,6 +195,7 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 
 ## 版本与优化记录
 
+- 1.4.4：开发/测试服务一键切换、root 服务启停、长文本文件名优化；详见 [OPTIMIZATION-1.4.4.md](OPTIMIZATION-1.4.4.md)
 - 1.4.3：外部服务模式、root 系统服务与启动修复；详见 [OPTIMIZATION-1.4.3.md](OPTIMIZATION-1.4.3.md)
 - 1.4.2：拖拽/粘贴文件路径、长文本转文件、root 服务开关；详见 [OPTIMIZATION-1.4.2.md](OPTIMIZATION-1.4.2.md)
 - 1.4.1：systemd 用户服务托管、桌面集成结论；详见 [OPTIMIZATION-1.4.1.md](OPTIMIZATION-1.4.1.md)

@@ -183,6 +183,18 @@ function dshUrlAction(value) {
   }
 }
 
+/** 根据粘贴内容生成可读文件名：时间 + 首行摘要。 */
+function pastedTextFileName(text, date = new Date()) {
+  const firstLine =
+    String(text || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean) || '粘贴内容'
+  const safe = firstLine.replace(/[\\/:*?"<>|\s]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24)
+  const stamp = date.toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  return `paste-${stamp}-${safe || '粘贴内容'}.txt`
+}
+
 module.exports = {
   readTail,
   redact,
@@ -197,4 +209,5 @@ module.exports = {
   normalizeRegistry,
   boundsIntersectAny,
   dshUrlAction,
+  pastedTextFileName,
 }

@@ -201,6 +201,10 @@ function diagnosticsHtml() {
     <button id="systemd-enable">启用 systemd 托管</button>
     <button id="systemd-disable">返回客户端托管</button>
     <button id="fix-owner">修复 dsh 文件属主</button>
+    <button id="switch-dev-service">连接开发服务(3080)</button>
+    <button id="switch-test-service">连接 root 测试(3081)</button>
+    <button id="root-service-start">启动 root 服务</button>
+    <button id="root-service-stop">停止 root 服务</button>
     <button id="clear-cache">清理缓存</button>
   </div>
   <div class="toast" id="toast"></div>
@@ -218,7 +222,7 @@ async function refresh() {
     ['端口', info.port],
     ['全局快捷键', info.shortcut],
     ['软件渲染', info.softwareRendering ? '开' : '关（GPU 加速）'],
-    ['服务托管', info.useSystemdService ? 'systemd 用户服务' : info.externalService ? `外部服务 ${info.port}` : '客户端子进程'],
+    ['服务托管', info.useSystemdService ? 'systemd 用户服务' : info.externalService ? '外部服务 ' + info.port : '客户端子进程'],
     ['界面动效', info.motionMode === 'always' ? '始终暂停' : info.motionMode === 'blur' ? '仅失焦暂停' : info.motionMode === 'auto' ? '自动（失焦/空闲暂停）' : '正常'],
     ['Electron', info.electron],
     ['Node', info.node],
@@ -236,7 +240,7 @@ $('copy').addEventListener('click', async () => {
   catch (err) { toast('复制失败：' + err.message) }
 })
 $('refresh').addEventListener('click', () => refresh().then(() => toast('已刷新')))
-for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['export-sessions','export-sessions'],['export-markdown','export-markdown'],['rollback-shell','rollback-shell'],['rollback-dsh','rollback-dsh'],['systemd-enable','systemd-enable'],['systemd-disable','systemd-disable'],['fix-owner','fix-owner'],['clear-cache','clear-cache']]) {
+for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['export-sessions','export-sessions'],['export-markdown','export-markdown'],['rollback-shell','rollback-shell'],['rollback-dsh','rollback-dsh'],['systemd-enable','systemd-enable'],['systemd-disable','systemd-disable'],['fix-owner','fix-owner'],['switch-dev-service','switch-dev-service'],['switch-test-service','switch-test-service'],['root-service-start','root-service-start'],['root-service-stop','root-service-stop'],['clear-cache','clear-cache']]) {
   $(id).addEventListener('click', async () => {
     try { const res = await window.dshUtility.invoke('diagnostics:action', { action }); toast(res.message || '完成') }
     catch (err) { toast('操作失败：' + err.message) }

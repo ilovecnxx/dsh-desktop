@@ -31,6 +31,7 @@ const {
   sessionNotifyDecision,
   normalizeRegistry,
   boundsIntersectAny,
+  pastedTextFileName,
   dshUrlAction,
 } = require('./runtime-utils')
 const updater = require('./updater')
@@ -1425,8 +1426,7 @@ function savePastedText(text) {
   const content = String(text || '')
   if (!content) throw new Error('空文本')
   if (content.length > 4 * 1024 * 1024) throw new Error('文本过大（超过 4MB）')
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const file = path.join(pasteSaveDir(), `paste-${stamp}.txt`)
+  const file = path.join(pasteSaveDir(), pastedTextFileName(content))
   fs.writeFileSync(file, content, { mode: 0o600 })
   log(`长文本已保存为文件 ${file}`)
   return file
@@ -1491,6 +1491,33 @@ async function exportLatestSessionMarkdown() {
   fs.writeFileSync(picked.filePath, markdown)
   log(`已导出会话 Markdown ${picked.filePath}`)
   return { message: `已导出会话 Markdown：${picked.filePath}` }
+}
+
+async function switchService(port, label) {
+  config.set('port', Number(port))
+  config.set('externalService', true)
+  config.set('useSystemdService', false)
+  log(`切换客户端到${label}（127.0.0.1:${port}），重启界面`)
+  setTimeout(() => {
+    app.relaunch()
+    app.exit(0)
+  }, 300)
+  return { message: `正在切换到${label}（127.0.0.1:${port}），界面会重启一次` }
+}
+
+async function controlRootService(action) {
+  try {
+    execFileSync('pkexec', ['systemctl', action, 'dsh-web-root.service'], {
+      timeout: 120000,
+      stdio: 'ignore',
+    })
+    log(`root 测试服务 ${action} 成功`)
+    return { message: `已${action === 'start' ? '启动' : '停止'} dsh-web-root.service` }
+  } catch (err) {
+    return {
+      message: `操作失败：${String(err.message || err)}\n（需要图形密码授权；测试服务端口 3081）`,
+    }
+  }
 }
 
 async function fixDshOwner() {

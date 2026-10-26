@@ -16,6 +16,7 @@ const {
   normalizeRegistry,
   boundsIntersectAny,
   dshUrlAction,
+  pastedTextFileName,
 } = require('../main/runtime-utils')
 const shellUpdater = require('../main/shell-updater')
 
@@ -204,4 +205,14 @@ test('dshUrlAction parses dsh:// links', () => {
   assert.equal(dshUrlAction('https://example.com'), null)
   assert.equal(dshUrlAction('not-a-url'), null)
   assert.equal(dshUrlAction(undefined), null)
+})
+
+test('pastedTextFileName builds safe readable name', () => {
+  const name = pastedTextFileName('第一行摘要\n第二行', new Date('2026-10-26T00:00:00Z'))
+  assert.ok(name.startsWith('paste-2026-10-26T00-00-00-'))
+  assert.ok(name.includes('第一行摘要'))
+  assert.ok(name.endsWith('.txt'))
+  const unsafe = pastedTextFileName('a/b:c*?"<>| d', new Date('2026-10-26T00:00:00Z'))
+  assert.ok(!/[\\/:*?"<>|]/.test(unsafe))
+  assert.ok(pastedTextFileName('', new Date('2026-10-26T00:00:00Z')).includes('粘贴内容'))
 })
