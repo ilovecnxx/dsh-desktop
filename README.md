@@ -226,6 +226,13 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 
 完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。测试命令：`npm test`。
 
+## 下载安装（正式发布）
+
+- GitHub Release：https://github.com/ilovecnxx/dsh-desktop/releases/tag/v1.4.18
+- 资产：`dsh-desktop_1.4.18_amd64.deb`、`dsh-desktop_1.4.18_arm64.deb`、
+  `DeepSeek.Harness-1.4.18.AppImage`、`SHA256SUMS`
+- 校验：`sha256sum -c SHA256SUMS`
+
 ## 打包分发
 
 ```bash
