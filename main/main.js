@@ -396,6 +396,9 @@ function createWindow() {
     if (/^https?:/.test(win.webContents.getURL())) {
       lastMotionPaused = null
       win.webContents.send('dsh-desktop:paste-config', pasteConfigSnapshot())
+      win.webContents.send('dsh-desktop:ui-config', {
+        autoHideStaleRunning: config.get('autoHideStaleRunning') !== false,
+      })
       if (process.env.DSH_DESKTOP_TEST_SIMULATE_PASTE) {
         win.webContents.send('dsh-desktop:test-mode')
       }
@@ -593,6 +596,48 @@ function writeStabilityReport() {
   }
 }
 
+function stabilitySummary() {
+  try {
+    const file = path.join(USER_DATA, 'observation.jsonl')
+    if (!fs.existsSync(file)) return { message: '暂无稳定性观察数据（需要客户端运行后生成）' }
+    const lines = fs
+      .readFileSync(file, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line)
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+    if (!lines.length) return { message: '稳定性观察数据为空' }
+    const last = lines[lines.length - 1]
+    const startedAtList = lines
+      .map((item) => (item.stability && item.stability.startedAt) || '')
+      .filter(Boolean)
+    const uniqueStarts = [...new Set(startedAtList)]
+    const inactive = lines.filter((item) => !item.devServiceActive).length
+    const summary = {
+      snapshots: lines.length,
+      first: lines[0].ts,
+      last: last.ts,
+      clientRestarts: Math.max(0, uniqueStarts.length - 1),
+      maxReconnects: Math.max(0, ...lines.map((item) => (item.stability && item.stability.reconnects) || 0)),
+      maxGpuFallbacks: Math.max(0, ...lines.map((item) => (item.stability && item.stability.gpuFallbacks) || 0)),
+      maxServiceRestarts: Math.max(0, ...lines.map((item) => (item.stability && item.stability.serviceRestarts) || 0)),
+      devServiceInactiveSnapshots: inactive,
+      lastVersion: last.version,
+    }
+    const out = path.join(USER_DATA, 'observation-summary.json')
+    fs.writeFileSync(out, JSON.stringify(summary, null, 2) + '\n')
+    return { message: `稳定性汇总（${out}）：${JSON.stringify(summary)}` }
+  } catch (err) {
+    return { message: `生成稳定性汇总失败：${err.message}` }
+  }
+}
+
 function closeAllWorkspaces() {
   for (const tracked of workspaceServices.values()) {
     try {
@@ -632,7 +677,13 @@ async function openFolderWorkspace(folder) {
   const aux = createAuxWindow(service.url)
   if (aux) {
     const key = aux.webContents.id
-    workspaceServices.set(key, { service, win: aux })
+    const tracked = { service, win: aux, lastUsedAt: Date.now() }
+    workspaceServices.set(key, tracked)
+    const touch = () => {
+      tracked.lastUsedAt = Date.now()
+    }
+    aux.on('focus', touch)
+    aux.webContents.on('before-input-event', touch)
     aux.on('closed', () => {
       const tracked = workspaceServices.get(key)
       workspaceServices.delete(key)
@@ -1473,6 +1524,8 @@ function settingsSnapshot() {
         serviceRestarts: stability.serviceRestarts,
       },
       workspaceLimit: Number(config.get('workspaceLimit') || 3),
+      workspaceIdleMinutes: Math.round(Number(config.get('workspaceIdleMs') || 600000) / 60000),
+      autoHideStaleRunning: config.get('autoHideStaleRunning') !== false,
       port: Number(config.get('port') || 3080),
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
@@ -1518,6 +1571,15 @@ function applySettingsPatch(patch) {
     config.set(
       'pasteToFileThreshold',
       Math.max(500, Math.min(200000, Number(merged.pasteToFileThreshold) || 6000)),
+    )
+  }
+  if (merged.autoHideStaleRunning !== undefined) {
+    config.set('autoHideStaleRunning', Boolean(merged.autoHideStaleRunning))
+  }
+  if (merged.workspaceIdleMinutes !== undefined) {
+    config.set(
+      'workspaceIdleMs',
+      Math.max(1, Math.min(240, Number(merged.workspaceIdleMinutes) || 10)) * 60000,
     )
   }
   if (merged.workspaceLimit !== undefined) {
@@ -1937,6 +1999,8 @@ async function handleUtilityAction(payload) {
       const file = await captureUiReport('manual')
       return { message: file ? `界面状态已保存：${file}` : '采集界面状态失败' }
     }
+    case 'stability-summary':
+      return stabilitySummary()
     case 'stability-report': {
       const data = writeStabilityReport()
       return { message: `稳定性报告：${stabilityFilePath()}${data ? '' : '（写入失败）'}` }
@@ -2199,6 +2263,10 @@ function quitApp({ stopExternal = false } = {}) {
 /* ---------------------------------------------------------------- 启动 */
 
 function registerIpc() {
+  ipcMain.handle('dsh:get-ui-config', (event) => {
+    if (!isOurSender(event.sender)) throw new Error('unexpected sender')
+    return { autoHideStaleRunning: config.get('autoHideStaleRunning') !== false }
+  })
   ipcMain.handle('dsh:get-paste-config', (event) => {
     if (!isOurSender(event.sender)) throw new Error('unexpected sender')
     return pasteConfigSnapshot()
@@ -2379,6 +2447,11 @@ async function pollSessionState() {
     approvalEnabled: config.get('notifyOnApproval') !== false,
   })
   sessionPrev = { running: state.running, dialogs: Number(state.dialogs) || 0 }
+  try {
+    win.webContents.send('dsh-desktop:session-running', { running: state.running })
+  } catch {
+    // ignore
+  }
   if (!decision) {
     if (previousRunning && state.running === false) {
       setTimeout(() => {
@@ -2472,6 +2545,21 @@ async function bootstrap() {
   } catch (err) {
     log(`监听下载失败: ${err.message}`)
   }
+  const workspaceReclaimTimer = setInterval(() => {
+    const limitMs = Math.max(60000, Number(config.get('workspaceIdleMs') || 600000))
+    for (const tracked of workspaceServices.values()) {
+      if (!tracked.win || tracked.win.isDestroyed()) continue
+      if (tracked.win.isFocused()) continue
+      if (Date.now() - tracked.lastUsedAt < limitMs) continue
+      log(`工作区闲置超过 ${Math.round(limitMs / 60000)} 分钟，自动回收：${tracked.service.folder}`)
+      try {
+        tracked.win.close()
+      } catch {
+        // ignore
+      }
+    }
+  }, 60000)
+  workspaceReclaimTimer.unref?.()
   if (motionTimer) clearInterval(motionTimer)
   motionTimer = setInterval(() => {
     if (!quitting && !upgrading) syncMotionState()

@@ -52,6 +52,10 @@ const DEFAULT_CONFIG = {
   runServiceAsRoot: false,
   // 同时保留的文件夹工作区实例上限（超出按最旧自动关闭）
   workspaceLimit: 3,
+  // 工作区窗口闲置多少毫秒后自动回收（关闭窗口并停止服务）
+  workspaceIdleMs: 10 * 60 * 1000,
+  // 会话空闲时自动隐藏 dsh 前端残留的「任务运行中」状态条（兼容层）
+  autoHideStaleRunning: true,
   notifyOnApproval: true,
   // 自动模式下，窗口聚焦但空闲超过该时长也暂停循环动画
   motionIdleMs: 90 * 1000,

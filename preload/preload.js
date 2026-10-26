@@ -133,6 +133,55 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 })
 
+// ---- 会话空闲时隐藏 dsh 前端残留的「任务运行中」状态条（兼容层）----
+const HIDE_RUNNING_STYLE_ID = 'dsh-desktop-hide-running'
+let uiConfig = { autoHideStaleRunning: true }
+let sessionRunning = true
+let hideRunningTimer = null
+
+function applyRunningBarVisibility() {
+  const existing = document.getElementById(HIDE_RUNNING_STYLE_ID)
+  if (existing) existing.remove()
+  if (!uiConfig.autoHideStaleRunning || sessionRunning || !document.documentElement) return
+  const style = document.createElement('style')
+  style.id = HIDE_RUNNING_STYLE_ID
+  style.textContent = '[class*="_running"]{display:none!important}'
+  document.documentElement.appendChild(style)
+}
+
+function setSessionRunning(running) {
+  sessionRunning = Boolean(running)
+  if (hideRunningTimer) {
+    clearTimeout(hideRunningTimer)
+    hideRunningTimer = null
+  }
+  if (sessionRunning) {
+    applyRunningBarVisibility()
+  } else {
+    // 等 dsh 自己清理；8 秒后仍在才隐藏，避免误伤
+    hideRunningTimer = setTimeout(() => applyRunningBarVisibility(), 8000)
+  }
+}
+
+ipcRenderer.on('dsh-desktop:ui-config', (_event, cfg) => {
+  if (cfg && typeof cfg === 'object') {
+    uiConfig = { autoHideStaleRunning: cfg.autoHideStaleRunning !== false }
+    applyRunningBarVisibility()
+  }
+})
+ipcRenderer.on('dsh-desktop:session-running', (_event, data) => {
+  if (data && typeof data.running === 'boolean') setSessionRunning(data.running)
+})
+ipcRenderer
+  .invoke('dsh:get-ui-config')
+  .then((cfg) => {
+    if (cfg) {
+      uiConfig = { autoHideStaleRunning: cfg.autoHideStaleRunning !== false }
+      applyRunningBarVisibility()
+    }
+  })
+  .catch(() => {})
+
 // ---- 拖拽诊断（不拦截，交给 dsh 原生拖拽附件）----
 // dsh 前端自带「文件或图片拖动到此处」提示层（backdrop blur）。客户端不再
 // preventDefault / stopPropagation，避免其拖拽状态无法复位导致模糊层残留。
