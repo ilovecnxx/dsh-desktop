@@ -167,6 +167,22 @@ function boundsIntersectAny(saved, workAreas) {
   })
 }
 
+/**
+ * 解析 dsh:// 协议链接：dsh://new 新建窗口，其余情况聚焦/打开主窗口。
+ * @returns {'new'|'open'|null}
+ */
+function dshUrlAction(value) {
+  if (typeof value !== 'string') return null
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'dsh:') return null
+    if (url.hostname.toLowerCase() === 'new') return 'new'
+    return 'open'
+  } catch {
+    return null
+  }
+}
+
 module.exports = {
   readTail,
   redact,
@@ -180,4 +196,5 @@ module.exports = {
   sessionNotifyDecision,
   normalizeRegistry,
   boundsIntersectAny,
+  dshUrlAction,
 }

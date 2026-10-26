@@ -15,6 +15,7 @@ const {
   sessionNotifyDecision,
   normalizeRegistry,
   boundsIntersectAny,
+  dshUrlAction,
 } = require('../main/runtime-utils')
 const shellUpdater = require('../main/shell-updater')
 
@@ -193,4 +194,14 @@ test('boundsIntersectAny validates saved window against displays', () => {
   assert.equal(boundsIntersectAny({ width: 100, height: 100 }, []), false)
   // 缺少 x/y 时按显示器原点计算
   assert.equal(boundsIntersectAny({ width: 800, height: 600 }, [display]), true)
+})
+
+test('dshUrlAction parses dsh:// links', () => {
+  assert.equal(dshUrlAction('dsh://new'), 'new')
+  assert.equal(dshUrlAction('dsh://NEW'), 'new')
+  assert.equal(dshUrlAction('dsh://open?workspace=/tmp'), 'open')
+  assert.equal(dshUrlAction('dsh://'), 'open')
+  assert.equal(dshUrlAction('https://example.com'), null)
+  assert.equal(dshUrlAction('not-a-url'), null)
+  assert.equal(dshUrlAction(undefined), null)
 })

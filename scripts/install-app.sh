@@ -131,6 +131,7 @@ Comment=DeepSeek Harness desktop client
 Comment[zh_CN]=DeepSeek Harness 桌面客户端（Linux）
 Exec=$BIN_DIR/dsh-desktop
 Icon=dsh-desktop
+MimeType=x-scheme-handler/dsh;
 Terminal=false
 StartupNotify=true
 StartupWMClass=dsh-desktop
@@ -138,6 +139,7 @@ Categories=Development;
 Keywords=deepseek;harness;dsh;ai;agent;
 EOF
 update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
+xdg-mime default dsh-desktop.desktop x-scheme-handler/dsh >/dev/null 2>&1 || true
 
 # 旧的浏览器版入口改名，避免两个同名图标
 OLD="$DESKTOP_DIR/deepseek-harness.desktop"

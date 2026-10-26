@@ -31,6 +31,7 @@ const {
   sessionNotifyDecision,
   normalizeRegistry,
   boundsIntersectAny,
+  dshUrlAction,
 } = require('./runtime-utils')
 const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
@@ -53,6 +54,18 @@ app.commandLine.appendSwitch('disable-gpu-process-crash-limit')
 const PROJECT_DIR = path.resolve(__dirname, '..')
 const USER_DATA = process.env.DSH_DESKTOP_USER_DATA || path.join(os.homedir(), '.config', 'dsh-desktop')
 app.setPath('userData', USER_DATA)
+
+const INITIAL_DSH_URL =
+  process.argv.find((arg) => typeof arg === 'string' && arg.startsWith('dsh://')) || null
+try {
+  if (process.defaultApp) {
+    app.setAsDefaultProtocolClient('dsh', process.execPath, [path.resolve(process.argv[1] || '')])
+  } else {
+    app.setAsDefaultProtocolClient('dsh')
+  }
+} catch {
+  // 开发/沙箱环境可能无法注册，忽略
+}
 
 const PORT_ENV = process.env.DSH_DESKTOP_PORT
 let port = Number(PORT_ENV || 3080)
@@ -598,6 +611,15 @@ function serviceStatusText() {
   if (recovering) return '服务恢复中…'
   if (!serviceHealthy) return '服务异常'
   return `服务运行中 · dsh v${installedVersionSafe()}`
+}
+
+function handleProtocolUrl(value) {
+  const action = dshUrlAction(value)
+  if (!action) return false
+  log(`收到 dsh:// 链接（${action}）：${value}`)
+  if (action === 'new') createAuxWindow()
+  else showWindow()
+  return true
 }
 
 function showWindow() {
@@ -1974,6 +1996,7 @@ async function bootstrap() {
   }
   log(`客户端启动完成 dsh=${installedVersionSafe()} electron=${process.versions.electron} elapsedMs=${Math.round(performance.now() - bootStartedAt)}`)
   startSessionWatcher()
+  if (INITIAL_DSH_URL) handleProtocolUrl(INITIAL_DSH_URL)
   refreshRecentSessions()
   if (recentSessionsTimer) clearInterval(recentSessionsTimer)
   recentSessionsTimer = setInterval(() => refreshRecentSessions(), 5 * 60 * 1000)
@@ -2076,7 +2099,17 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => showWindow())
+  app.on('second-instance', (_event, argv) => {
+    const url = (argv || []).find(
+      (arg) => typeof arg === 'string' && arg.startsWith('dsh://'),
+    )
+    if (url && handleProtocolUrl(url)) return
+    showWindow()
+  })
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    handleProtocolUrl(url)
+  })
   app.on('before-quit', () => {
     quitting = true
     if (autoCheckTimer) clearInterval(autoCheckTimer)
