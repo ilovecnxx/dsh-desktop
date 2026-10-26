@@ -185,6 +185,10 @@ function diagnosticsHtml() {
     <button id="restart">重启服务</button>
     <button id="open-logs">打开日志目录</button>
     <button id="export-diag">导出诊断包</button>
+    <button id="export-sessions">备份会话</button>
+    <button id="export-markdown">导出最近会话 Markdown</button>
+    <button id="rollback-shell">回滚客户端版本</button>
+    <button id="rollback-dsh">回滚 dsh 运行时</button>
     <button id="clear-cache">清理缓存</button>
   </div>
   <div class="toast" id="toast"></div>
@@ -219,7 +223,7 @@ $('copy').addEventListener('click', async () => {
   catch (err) { toast('复制失败：' + err.message) }
 })
 $('refresh').addEventListener('click', () => refresh().then(() => toast('已刷新')))
-for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['clear-cache','clear-cache']]) {
+for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['export-sessions','export-sessions'],['export-markdown','export-markdown'],['rollback-shell','rollback-shell'],['rollback-dsh','rollback-dsh'],['clear-cache','clear-cache']]) {
   $(id).addEventListener('click', async () => {
     try { const res = await window.dshUtility.invoke('diagnostics:action', { action }); toast(res.message || '完成') }
     catch (err) { toast('操作失败：' + err.message) }

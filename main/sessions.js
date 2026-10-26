@@ -128,10 +128,78 @@ async function listRecentSessions(root, limit = 8) {
       title: rawTitle || `会话 ${entry.id.slice(0, 12)}`,
       rawTitle: rawTitle || '',
       mtime: entry.mtime,
+      file: entry.file,
     })
     if (sessions.length >= limit) break
   }
   return sessions
 }
 
-module.exports = { listRecentSessions, pickTitleFromLines, cleanTitle, collectSessionFiles }
+/**
+ * 把会话事件转换为 Markdown（只导出用户/助手文本，跳过推理与工具调用明细）。
+ * @param {Array<object>} events
+ * @param {{exportedAt?:string}} [opts]
+ */
+function eventsToMarkdown(events, opts = {}) {
+  let title = ''
+  const blocks = []
+  for (const event of events || []) {
+    if (!event || typeof event !== 'object') continue
+    if (event.type === 'session/title' && event.data && event.data.title) {
+      title = String(event.data.title)
+      continue
+    }
+    if (event.type === 'agent/inbox/spliced') {
+      const inserted = event.data && event.data.inserted
+      if (!Array.isArray(inserted)) continue
+      for (const item of inserted) {
+        if (!item || item.role !== 'user' || !Array.isArray(item.content)) continue
+        const text = item.content
+          .filter((part) => part && part.type === 'text' && part.text)
+          .map((part) => String(part.text))
+          .join('\n')
+          .trim()
+        if (text) blocks.push(`## 🧑 用户\n\n${text}`)
+      }
+      continue
+    }
+    if (event.type === 'assistant/message') {
+      const message = event.data && event.data.message
+      if (!message || !Array.isArray(message.content)) continue
+      const text = message.content
+        .filter((part) => part && part.type === 'text' && part.text)
+        .map((part) => String(part.text))
+        .join('\n')
+        .trim()
+      if (text) blocks.push(`## 🤖 助手\n\n${text}`)
+    }
+  }
+  const heading = title ? `# ${title}` : '# DeepSeek Harness 会话'
+  const exportedAt = opts.exportedAt || new Date().toISOString()
+  return `${heading}\n\n> 导出时间：${exportedAt}\n\n${blocks.join('\n\n---\n\n')}\n`
+}
+
+/** 读取一个已解压的/压缩的会话文件并转成 Markdown。 */
+async function sessionToMarkdown(file) {
+  const text = await decompressSessionFile(file)
+  const events = []
+  for (const line of text.split('\n')) {
+    if (!line) continue
+    try {
+      events.push(JSON.parse(line))
+    } catch {
+      // ignore malformed line
+    }
+  }
+  return eventsToMarkdown(events)
+}
+
+module.exports = {
+  listRecentSessions,
+  pickTitleFromLines,
+  cleanTitle,
+  collectSessionFiles,
+  decompressSessionFile,
+  eventsToMarkdown,
+  sessionToMarkdown,
+}

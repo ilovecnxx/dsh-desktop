@@ -10,7 +10,9 @@
  */
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, shell, Notification, globalShortcut, clipboard, screen } = require('electron')
 const fs = require('node:fs')
-const { execFileSync } = require('node:child_process')
+const { execFileSync, execFile } = require('node:child_process')
+const { promisify } = require('node:util')
+const execFileAsync = promisify(execFile)
 const os = require('node:os')
 const path = require('node:path')
 
@@ -55,6 +57,7 @@ app.setPath('userData', USER_DATA)
 const PORT_ENV = process.env.DSH_DESKTOP_PORT
 let port = Number(PORT_ENV || 3080)
 const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
+const DSH_RELEASES_URL = 'https://github.com/deepseek-ai/deepseek-harness/releases'
 const SERVER_LOG = path.join(USER_DATA, 'server.log')
 const MAIN_LOG = path.join(USER_DATA, 'main.log')
 const LAUNCHER = process.env.DSH_DESKTOP_LAUNCHER || path.join(os.homedir(), '.local', 'bin', 'dsh-desktop')
@@ -758,12 +761,16 @@ async function checkNow({ interactive = false } = {}) {
           title: '发现新版本',
           message: `发现新版本 v${result.latest}`,
           detail: `当前版本 v${result.current}\n更新通道：${result.channel}\n\n升级过程会自动停止服务、安装新版本、同步插件并重启，通常需要 1–3 分钟。`,
-          buttons: ['立即升级', '稍后'],
+          buttons: ['立即升级', '查看更新说明', '稍后'],
           defaultId: 0,
-          cancelId: 1,
+          cancelId: 2,
           noLink: true,
         })
         if (answer.response === 0) return await upgrade(result.latest)
+        if (answer.response === 1) {
+          shell.openExternal(DSH_RELEASES_URL)
+          return result
+        }
       } else {
         sendUpdate(result)
         notify(`发现新版本 v${result.latest}`, '点击客户端右下角提示即可升级。')
@@ -846,6 +853,11 @@ async function upgrade(version) {
   if (!server) return { ok: false, error: '服务未初始化' }
   upgrading = true
   log(`开始升级到 ${version}`)
+  try {
+    config.set('lastDshVersion', server.installedVersion())
+  } catch {
+    // ignore
+  }
   try {
     if (win && !win.isDestroyed()) win.hide()
     showProgressWindow(version)
@@ -1335,6 +1347,93 @@ function clearClientCache() {
   return { message: `已清理 ${removed} 个缓存目录，重启客户端后完全生效` }
 }
 
+async function exportSessionsBackup() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const defaultPath = path.join(app.getPath('downloads'), `dsh-sessions-backup-${stamp}.tar.gz`)
+  const picked = await dialog.showSaveDialog(win, {
+    title: '备份会话数据',
+    defaultPath,
+    filters: [{ name: 'tar.gz 压缩包', extensions: ['tar.gz'] }],
+  })
+  if (picked.canceled || !picked.filePath) return { message: '已取消' }
+  await execFileAsync('tar', ['-czf', picked.filePath, '-C', DSH_HOME, 'sessions'], {
+    timeout: 120000,
+    maxBuffer: 1024 * 1024,
+  })
+  log(`已备份会话数据 ${picked.filePath}`)
+  return { message: `已备份会话数据：${picked.filePath}` }
+}
+
+async function exportLatestSessionMarkdown() {
+  const list = await sessionsStore.listRecentSessions(path.join(DSH_HOME, 'sessions'), 1)
+  if (!list.length) return { message: '没有找到会话' }
+  const latest = list[0]
+  const markdown = await sessionsStore.sessionToMarkdown(latest.file)
+  const defaultPath = path.join(
+    app.getPath('downloads'),
+    `dsh-session-${latest.id.slice(0, 18)}.md`,
+  )
+  const picked = await dialog.showSaveDialog(win, {
+    title: '导出最近会话为 Markdown',
+    defaultPath,
+    filters: [{ name: 'Markdown', extensions: ['md'] }],
+  })
+  if (picked.canceled || !picked.filePath) return { message: '已取消' }
+  fs.writeFileSync(picked.filePath, markdown)
+  log(`已导出会话 Markdown ${picked.filePath}`)
+  return { message: `已导出会话 Markdown：${picked.filePath}` }
+}
+
+async function rollbackShellFlow() {
+  const backup = path.join(shellUpdater.appRoot(), 'resources', 'app.backup')
+  if (!fs.existsSync(backup)) return { message: '没有可回滚的客户端备份' }
+  const answer = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: '回滚客户端',
+    message: '回滚到上一个客户端版本？',
+    detail: '会替换客户端文件并重启应用，后台服务会一并重启（会话记录保留）。',
+    buttons: ['回滚并重启', '取消'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  if (answer.response !== 0) return { message: '已取消' }
+  const ok = shellUpdater.rollbackShellUpdate()
+  if (!ok) return { message: '回滚失败（备份不存在）' }
+  await server.stop()
+  setTimeout(() => {
+    app.relaunch()
+    app.exit(0)
+  }, 200)
+  return { message: '正在回滚并重启客户端…' }
+}
+
+async function rollbackDshFlow() {
+  const previous = config.get('lastDshVersion')
+  if (!previous || previous === installedVersionSafe()) {
+    return { message: '没有可回滚的 dsh 版本记录' }
+  }
+  if (!updater.helperInstalled()) return { message: '免密升级助手未安装，无法回滚' }
+  const answer = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: '回滚 dsh 运行时',
+    message: `回滚到 v${previous}？`,
+    detail: '会重新安装该版本并重启后台服务，会话记录保留。',
+    buttons: ['回滚并重启服务', '取消'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  if (answer.response !== 0) return { message: '已取消' }
+  await updater.installVersion(previous)
+  config.set('lastDshVersion', null)
+  await server.stop()
+  await server.start()
+  managed = true
+  await win.loadURL(server.tokenUrl)
+  return { message: `已回滚到 dsh v${previous}` }
+}
+
 async function handleUtilityAction(payload) {
   const action = payload && payload.action
   switch (action) {
@@ -1380,6 +1479,14 @@ async function handleUtilityAction(payload) {
       return exportDiagnosticsBundle()
     case 'clear-cache':
       return clearClientCache()
+    case 'export-sessions':
+      return exportSessionsBackup()
+    case 'export-markdown':
+      return exportLatestSessionMarkdown()
+    case 'rollback-shell':
+      return rollbackShellFlow()
+    case 'rollback-dsh':
+      return rollbackDshFlow()
     default:
       throw new Error(`未知操作: ${action}`)
   }
