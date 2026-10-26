@@ -26,6 +26,9 @@ function buildUnit(opts) {
   const dsh = opts.dsh || '/usr/bin/dsh'
   const flock = opts.flock || '/usr/bin/flock'
   const lock = path.join(opts.dshHome, 'web.lock')
+  const execStart = opts.runAsRoot
+    ? `/usr/bin/sudo -n /usr/local/sbin/dsh-service --no-open --port ${opts.port}`
+    : `${flock} -n ${lock} ${dsh} web --no-open --port ${opts.port}`
   return `[Unit]
 Description=DeepSeek Harness web service (DSH Desktop)
 After=network.target
@@ -34,7 +37,7 @@ After=network.target
 Type=simple
 WorkingDirectory=${opts.workspace}
 Environment=DSH_HOME=${opts.dshHome}
-ExecStart=${flock} -n ${lock} ${dsh} web --no-open --port ${opts.port}
+ExecStart=${execStart}
 Restart=on-failure
 RestartSec=2
 StandardOutput=append:${opts.logFile}

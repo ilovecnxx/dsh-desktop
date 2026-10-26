@@ -227,11 +227,17 @@ class ServerManager {
     this.stopping = false
     this.tokenUrl = null
     if (!systemd.available()) throw new Error('systemd 用户服务不可用')
+    const rootHelper = '/usr/local/sbin/dsh-service'
+    const useRootUnit = this.runAsRoot && fs.existsSync(rootHelper)
+    if (this.runAsRoot && !useRootUnit) {
+      this.pushLog('未找到 root 助手，systemd 服务以普通权限运行')
+    }
     systemd.installUnit({
       dshHome: this.dshHome,
       port: this.port,
       workspace: this.workspace,
       logFile: this.systemdLog,
+      runAsRoot: useRootUnit,
     })
     try {
       if (fs.existsSync(this.systemdLog) && fs.statSync(this.systemdLog).size > 2 * 1024 * 1024) {

@@ -40,3 +40,15 @@ test('parseTokenFromLog picks the latest token for the requested port', () => {
   assert.equal(parseTokenFromLog(log, 3100), null)
   assert.equal(parseTokenFromLog('', 3080), null)
 })
+
+test('buildUnit supports root helper execution', () => {
+  const unit = buildUnit({
+    dshHome: '/home/user/.dsh',
+    port: 3080,
+    workspace: '/home/user',
+    logFile: '/tmp/sd.log',
+    runAsRoot: true,
+  })
+  assert.ok(unit.includes('ExecStart=/usr/bin/sudo -n /usr/local/sbin/dsh-service --no-open --port 3080'))
+  assert.ok(!unit.includes('flock'))
+})
