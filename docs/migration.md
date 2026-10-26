@@ -49,3 +49,16 @@ cat ~/.config/dsh-desktop/stability.json
 - [ ] 服务端重启（systemctl restart）后客户端能自动重连；
 - [ ] 2 天后无异常 → 结束观察，按上文「迁移步骤」正式切换；
 - [ ] 出现异常 → 保留 `main.log`、`stability.json`，用浏览器打开 3080 继续工作并回滚。
+
+## 迁移完成记录
+
+- 正式切换时间：**2026-10-26 14:52（CST）**
+- 桌面客户端版本：1.4.18；作为主入口（`desktopPrimary: true`）
+- 后台服务：3080，systemd 用户服务 `dsh-web-session.service`（enabled + active）
+- 客户端重启不影响服务：已验证（重启前后服务 MainPID 不变）
+- 浏览器：已不再使用（无 Chrome 进程）
+- root 测试端：3081 `dsh-web-root.service` 保留，仅测试用途
+- 观察窗口：截至切换仅 3 条快照（约 25 分钟，提前切换）；切换后继续每日快照
+- 迁移记录文件：`~/.config/dsh-desktop/migration.json`
+- 回滚：浏览器打开 3080 token URL；或
+  `systemctl --user restart dsh-web-session.service` 后重启客户端
