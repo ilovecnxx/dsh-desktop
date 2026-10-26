@@ -2108,6 +2108,14 @@ async function handleUtilityAction(payload) {
       return disableSystemdService()
     case 'close-workspaces':
       return closeAllWorkspaces()
+    case 'switch-dev-service':
+      return switchService(3080, '开发服务')
+    case 'switch-test-service':
+      return switchService(3081, 'root 测试服务')
+    case 'root-service-start':
+      return controlRootService('start')
+    case 'root-service-stop':
+      return controlRootService('stop')
     case 'ui-report': {
       const file = await captureUiReport('manual')
       return { message: file ? `界面状态已保存：${file}` : '采集界面状态失败' }
