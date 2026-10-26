@@ -9,6 +9,9 @@ const {
   rotateIfNeeded,
   shouldFallbackToSoftwareRendering,
   resolveCloseAction,
+  serviceRestartDelay,
+  resolveMotionMode,
+  shouldPauseMotion,
 } = require('../main/runtime-utils')
 const shellUpdater = require('../main/shell-updater')
 
@@ -116,4 +119,35 @@ test('resolveCloseAction validates values and migrates legacy closeToTray', () =
   assert.equal(resolveCloseAction('bogus', true), 'tray')
   assert.equal(resolveCloseAction(undefined, false), 'quit')
   assert.equal(resolveCloseAction(null, undefined), 'tray')
+})
+
+test('serviceRestartDelay backoff grows after repeated exits and caps', () => {
+  const now = 1_000_000
+  assert.equal(serviceRestartDelay([], now), 1500)
+  assert.equal(serviceRestartDelay([now - 1000, now - 500], now), 1500)
+  // 窗口内达到 3 次开始退避
+  assert.equal(serviceRestartDelay([now - 3000, now - 2000, now - 1000], now), 1500)
+  assert.equal(serviceRestartDelay([now - 3000, now - 2000, now - 1000, now - 500], now), 3000)
+  assert.equal(
+    serviceRestartDelay([now - 3000, now - 2000, now - 1000, now - 500, now - 400, now - 300], now),
+    12000,
+  )
+  // 窗口外的旧退出不计入
+  assert.equal(serviceRestartDelay([now - 10 * 60 * 1000, now - 1000], now), 1500)
+  // 封顶
+  const many = Array.from({ length: 20 }, (_, i) => now - i * 100)
+  assert.equal(serviceRestartDelay(many, now), 60000)
+})
+
+test('motion mode validates and pauses based on focus', () => {
+  assert.equal(resolveMotionMode('blur'), 'blur')
+  assert.equal(resolveMotionMode('always'), 'always')
+  assert.equal(resolveMotionMode('normal'), 'normal')
+  assert.equal(resolveMotionMode('bogus'), 'blur')
+  assert.equal(shouldPauseMotion('normal', true), false)
+  assert.equal(shouldPauseMotion('normal', false), false)
+  assert.equal(shouldPauseMotion('blur', true), false)
+  assert.equal(shouldPauseMotion('blur', false), true)
+  assert.equal(shouldPauseMotion('always', true), true)
+  assert.equal(shouldPauseMotion(undefined, false), true)
 })

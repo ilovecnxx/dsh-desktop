@@ -22,6 +22,9 @@ const {
   rotateIfNeeded,
   shouldFallbackToSoftwareRendering,
   resolveCloseAction,
+  serviceRestartDelay,
+  resolveMotionMode,
+  shouldPauseMotion,
 } = require('./runtime-utils')
 const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
@@ -36,6 +39,9 @@ try {
 } catch {
   // ignore
 }
+
+// GPU 进程反复崩溃时 Chromium 默认会直接退出应用；禁用该上限，交给软件渲染回退处理
+app.commandLine.appendSwitch('disable-gpu-process-crash-limit')
 
 const PROJECT_DIR = path.resolve(__dirname, '..')
 const USER_DATA = process.env.DSH_DESKTOP_USER_DATA || path.join(os.homedir(), '.config', 'dsh-desktop')
@@ -65,6 +71,11 @@ const TEST_SHELL_UPDATE = process.env.DSH_DESKTOP_TEST_SHELL_UPDATE === '1'
 // 测试钩子：模拟 GPU 进程崩溃
 const TEST_GPU_CRASH_MS = Number(process.env.DSH_DESKTOP_TEST_GPU_CRASH_MS || 0)
 const TEST_GPU_FALLBACK = process.env.DSH_DESKTOP_TEST_GPU_FALLBACK === '1'
+const TEST_HIDE_MS = Number(process.env.DSH_DESKTOP_TEST_HIDE_MS || 0)
+const TEST_GPU_LAUNCH_FAILED = process.env.DSH_DESKTOP_TEST_GPU_LAUNCH_FAILED === '1'
+const TEST_NO_RELAUNCH = process.env.DSH_DESKTOP_TEST_NO_RELAUNCH === '1'
+// 页面诊断：加载后输出动画/内存信息（用于排查高 CPU）
+const PAGE_DIAG_MS = Number(process.env.DSH_DESKTOP_PAGE_DIAG_MS || 0)
 const SHELL_NO_RELAUNCH = process.env.DSH_DESKTOP_SHELL_UPDATE_NO_RELAUNCH === '1'
 const EXIT_AFTER_MS = Number(process.env.DSH_DESKTOP_EXIT_AFTER_MS || 0)
 const NO_TRAY = process.env.DSH_DESKTOP_NO_TRAY === '1'
@@ -93,7 +104,9 @@ let healthChecking = false
 let lastRendererRecovery = 0
 let quitPromise = null
 let logWrites = 0
+let lastMotionPaused = null
 const gpuCrashTimes = []
+const serviceExitTimes = []
 let gpuFallbackInProgress = false
 const MAIN_LOG_MAX_BYTES = 2 * 1024 * 1024
 const bootStartedAt = performance.now()
@@ -139,7 +152,7 @@ const GPU_CRASH_WINDOW_MS = 10 * 60 * 1000
 const GPU_CRASH_THRESHOLD = 2
 
 /** 处理 GPU 进程崩溃：10 分钟内反复崩溃则引导切换到软件渲染。 */
-function handleGpuProcessGone(details = {}) {
+async function handleGpuProcessGone(details = {}) {
   const now = Date.now()
   gpuCrashTimes.push(now)
   // 只保留窗口内的时间戳，避免数组无限增长
@@ -152,16 +165,35 @@ function handleGpuProcessGone(details = {}) {
     return
   }
   gpuFallbackInProgress = true
-  log('GPU 进程 10 分钟内反复崩溃，准备切换到软件渲染')
-  notify('图形加速异常', 'GPU 进程反复崩溃，可在设置中启用软件渲染后重启客户端。')
+  const launchFailed = String(details.reason || '').includes('launch-failed')
+  log(`GPU 进程 10 分钟内反复崩溃，准备切换到软件渲染${launchFailed ? '（启动失败，自动切换）' : ''}`)
   if (TEST_GPU_FALLBACK) {
     config.set('softwareRendering', true)
     log('[test] 已写入 softwareRendering=true（测试模式不重启）')
     return
   }
+  if (launchFailed) {
+    // GPU 进程连启动都失败时对话框可能也无法正常显示，直接自动降级重启
+    config.set('softwareRendering', true)
+    notify('图形加速不可用', 'GPU 进程启动失败，正在以软件渲染重启客户端…')
+    log('GPU 启动失败，自动切换软件渲染并重启客户端')
+    if (TEST_NO_RELAUNCH) {
+      log('[test] 跳过自动重启（DSH_DESKTOP_TEST_NO_RELAUNCH=1）')
+      return
+    }
+    try {
+      await server.stop()
+    } catch (err) {
+      log(`切换软件渲染前停止服务失败: ${err.message}`)
+    }
+    app.relaunch()
+    app.exit(0)
+    return
+  }
+  notify('图形加速异常', 'GPU 进程反复崩溃，可在设置中启用软件渲染后重启客户端。')
   if (!win || win.isDestroyed()) return
-  dialog
-    .showMessageBox(win, {
+  try {
+    const answer = await dialog.showMessageBox(win, {
       type: 'warning',
       title: '图形加速异常',
       message: 'GPU 进程反复崩溃',
@@ -173,23 +205,21 @@ function handleGpuProcessGone(details = {}) {
       cancelId: 1,
       noLink: true,
     })
-    .then(async (answer) => {
-      if (answer.response === 0) {
-        config.set('softwareRendering', true)
-        try {
-          await server.stop()
-        } catch (err) {
-          log(`切换软件渲染前停止服务失败: ${err.message}`)
-        }
-        app.relaunch()
-        app.exit(0)
-      } else {
-        gpuFallbackInProgress = false
+    if (answer.response === 0) {
+      config.set('softwareRendering', true)
+      try {
+        await server.stop()
+      } catch (err) {
+        log(`切换软件渲染前停止服务失败: ${err.message}`)
       }
-    })
-    .catch(() => {
+      app.relaunch()
+      app.exit(0)
+    } else {
       gpuFallbackInProgress = false
-    })
+    }
+  } catch {
+    gpuFallbackInProgress = false
+  }
 }
 
 function installedVersionSafe() {
@@ -267,6 +297,8 @@ function createWindow() {
       quitApp({ stopExternal: true })
     }
   })
+  win.on('focus', () => syncMotionState())
+  win.on('blur', () => syncMotionState())
   win.on('hide', () => saveWindowBounds())
   win.on('minimize', () => saveWindowBounds())
   win.on('moved', () => scheduleSaveWindowBounds())
@@ -290,7 +322,13 @@ function createWindow() {
   })
   win.webContents.on('did-finish-load', () => {
     if (pendingUpdate && !upgrading) sendUpdate(pendingUpdate)
-    if (/^https?:/.test(win.webContents.getURL())) scheduleCapture()
+    if (/^https?:/.test(win.webContents.getURL())) {
+      lastMotionPaused = null
+      scheduleCapture()
+      maybeRunPerfHooks()
+      schedulePageDiagnostics()
+      syncMotionState()
+    }
   })
   win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
     // -3 是被主动取消的导航，忽略
@@ -330,6 +368,55 @@ function scheduleSaveWindowBounds() {
     boundsTimer = null
     saveWindowBounds()
   }, 800)
+}
+
+/**
+ * 根据「动效模式 + 当前焦点」通知渲染进程暂停/恢复界面动效。
+ * dsh Web UI 的运行态动画在部分 Wayland/GPU 环境下 CPU 开销很大。
+ */
+const PAUSE_MOTION_JS = `(() => {
+  window.__dshMotion = window.__dshMotion || { timer: null, paused: new Set() };
+  const state = window.__dshMotion;
+  const pause = () => {
+    for (const anim of document.getAnimations()) {
+      try {
+        const timing = anim.effect && anim.effect.getTiming ? anim.effect.getTiming() : null;
+        const iterations = timing ? timing.iterations : 1;
+        const infinite = iterations === Infinity || (typeof iterations === 'number' && !Number.isFinite(iterations));
+        if (infinite && anim.playState === 'running') { anim.pause(); state.paused.add(anim); }
+      } catch (err) {}
+    }
+  };
+  pause();
+  if (!state.timer) state.timer = setInterval(pause, 2000);
+  return state.paused.size;
+})()`
+
+const RESUME_MOTION_JS = `(() => {
+  const state = window.__dshMotion;
+  if (!state) return 0;
+  if (state.timer) { clearInterval(state.timer); state.timer = null; }
+  let resumed = 0;
+  for (const anim of state.paused) { try { anim.play(); resumed++; } catch (err) {} }
+  state.paused.clear();
+  return resumed;
+})()`
+
+function syncMotionState() {
+  if (!win || win.isDestroyed()) return
+  const mode = resolveMotionMode(config.get('motionMode'))
+  const paused = shouldPauseMotion(mode, win.isFocused())
+  if (paused === lastMotionPaused) return
+  lastMotionPaused = paused
+  win.webContents
+    .executeJavaScript(paused ? PAUSE_MOTION_JS : RESUME_MOTION_JS, true)
+    .then((count) => {
+      log(`界面动效: ${paused ? `已暂停 ${count} 个循环动画` : `已恢复 ${count} 个动画`}（模式 ${mode}）`)
+    })
+    .catch((err) => {
+      lastMotionPaused = null
+      log(`界面动效切换失败: ${err.message}`)
+    })
 }
 
 function toggleWindowVisibility() {
@@ -377,6 +464,86 @@ function showWindow() {
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
+}
+
+function schedulePageDiagnostics() {
+  if (!PAGE_DIAG_MS) return
+  setTimeout(async () => {
+    try {
+      const info = await win.webContents.executeJavaScript(`(() => {
+        const list = document.getAnimations ? document.getAnimations() : []
+        const running = []
+        for (const el of document.querySelectorAll('*')) {
+          const st = getComputedStyle(el)
+          if (st.animationName && st.animationName !== 'none' && st.animationPlayState === 'running') {
+            running.push(st.animationName + ':' + el.tagName.toLowerCase())
+            if (running.length >= 25) break
+          }
+        }
+        const perf = performance.memory
+          ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize }
+          : null
+        return {
+          title: document.title,
+          url: location.href.replace(/token=[^&]+/, 'token=[redacted]'),
+          visibility: document.visibilityState,
+          anims: list.length,
+          runningCount: running.length,
+          running,
+          perf,
+        }
+      })()`)
+      log(`[page-diag] ${JSON.stringify(info)}`)
+    } catch (err) {
+      log(`[page-diag] 失败: ${err.message}`)
+    }
+  }, PAGE_DIAG_MS)
+}
+
+function maybeRunPerfHooks() {
+  const dump = process.env.DSH_DESKTOP_TEST_DUMP_ANIMATIONS === '1'
+  const pause = process.env.DSH_DESKTOP_TEST_PAUSE_ANIMATIONS === '1'
+  if (!dump && !pause) return
+  setTimeout(async () => {
+    try {
+      if (dump) {
+        const info = await win.webContents.executeJavaScript(`(() => {
+          const anims = document.getAnimations ? document.getAnimations() : []
+          let cssAnim = 0
+          const names = {}
+          for (const el of document.querySelectorAll('*')) {
+            const st = getComputedStyle(el)
+            if (st.animationName && st.animationName !== 'none') {
+              cssAnim++
+              names[st.animationName] = (names[st.animationName] || 0) + 1
+            }
+          }
+          return {
+            title: document.title,
+            visibility: document.visibilityState,
+            anims: anims.length,
+            cssAnim,
+            names,
+            sample: anims.slice(0, 15).map(a => (a.animationName || 'unknown') + ':' + a.playState),
+          }
+        })()`)
+        log(`[test] 页面动画信息: ${JSON.stringify(info)}`)
+      }
+      if (pause) {
+        await win.webContents.executeJavaScript(`(() => {
+          if (document.getElementById('dsh-desktop-pause-anim')) return 'exists'
+          const st = document.createElement('style')
+          st.id = 'dsh-desktop-pause-anim'
+          st.textContent = '*,*::before,*::after{animation-play-state:paused!important;transition:none!important}'
+          document.documentElement.appendChild(st)
+          return 'injected'
+        })()`)
+        log('[test] 已暂停页面动画/过渡')
+      }
+    } catch (err) {
+      log(`[test] 性能钩子失败: ${err.message}`)
+    }
+  }, Number(process.env.DSH_DESKTOP_TEST_PERF_HOOK_DELAY_MS || 3000))
 }
 
 function scheduleCapture() {
@@ -896,10 +1063,12 @@ function settingsSnapshot() {
       autoRestartService: Boolean(config.get('autoRestartService')),
       closeToTray: Boolean(config.get('closeToTray')),
       closeAction: resolveCloseAction(config.get('closeAction'), config.get('closeToTray')),
+      motionMode: resolveMotionMode(config.get('motionMode')),
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
       useX11: config.get('useX11') !== false,
       softwareRendering: Boolean(config.get('softwareRendering')),
+    motionMode: resolveMotionMode(config.get('motionMode')),
     },
     autostart: autostartEnabled(),
     globalShortcut: config.get('globalShortcut'),
@@ -920,6 +1089,11 @@ function applySettingsPatch(patch) {
   const closeAction = resolveCloseAction(merged.closeAction, merged.closeToTray)
   config.set('closeAction', closeAction)
   config.set('closeToTray', closeAction === 'tray')
+  if (merged.motionMode !== undefined) {
+    config.set('motionMode', resolveMotionMode(merged.motionMode))
+    lastMotionPaused = null
+    syncMotionState()
+  }
   config.set('globalShortcutEnabled', Boolean(merged.globalShortcutEnabled))
   const interval = Math.max(5000, Number(merged.healthIntervalMs) || 60000)
   config.set('healthIntervalMs', interval)
@@ -1284,7 +1458,9 @@ async function bootstrap() {
   config = new Config(USER_DATA)
   rotateIfNeeded(MAIN_LOG, MAIN_LOG_MAX_BYTES)
   app.on('child-process-gone', (_event, details) => {
-    if (details && details.type === 'GPU') handleGpuProcessGone(details)
+    if (details && details.type === 'GPU') {
+      handleGpuProcessGone(details).catch((err) => log(`处理 GPU 崩溃失败: ${err.message}`))
+    }
   })
   if (!PORT_ENV) {
     try {
@@ -1300,11 +1476,20 @@ async function bootstrap() {
     logFile: SERVER_LOG,
     lockFile: path.join(DSH_HOME, 'web.lock'),
     onExit: () => {
-      log('服务进程意外退出')
+      const now = Date.now()
+      serviceExitTimes.push(now)
+      while (serviceExitTimes.length && now - serviceExitTimes[0] > 2 * 60 * 1000) {
+        serviceExitTimes.shift()
+      }
+      const delay = serviceRestartDelay(serviceExitTimes, now)
+      log(`服务进程意外退出（2 分钟内第 ${serviceExitTimes.length} 次），${delay}ms 后恢复`)
       if (quitting || upgrading || recovering || !config.get('autoRestartService')) return
+      if (delay > 5000) {
+        notify('服务反复退出', `将在约 ${Math.round(delay / 1000)} 秒后重试启动服务。`)
+      }
       setTimeout(() => {
         recoverService('服务进程退出').catch((err) => log(`恢复失败: ${err.message}`))
-      }, 1500)
+      }, delay)
     },
   })
   registerIpc()
@@ -1328,6 +1513,11 @@ async function bootstrap() {
   }
   startAutoCheck()
   startHealthMonitor()
+  try {
+    log(`GPU 状态: ${JSON.stringify(app.getGPUFeatureStatus())}`)
+  } catch {
+    // ignore
+  }
   log(`客户端启动完成 dsh=${installedVersionSafe()} electron=${process.versions.electron} elapsedMs=${Math.round(performance.now() - bootStartedAt)}`)
 
   if (config.get('shellAutoCheck')) {
@@ -1364,11 +1554,21 @@ async function bootstrap() {
     }, TEST_UPGRADE_DELAY)
   }
 
+  if (TEST_HIDE_MS > 0) {
+    setTimeout(() => {
+      log('[test] 隐藏窗口（用于空闲资源采样）')
+      if (win && !win.isDestroyed()) win.hide()
+    }, TEST_HIDE_MS)
+  }
+
   if (TEST_GPU_CRASH_MS > 0) {
     for (const delay of [TEST_GPU_CRASH_MS, TEST_GPU_CRASH_MS + 800]) {
       setTimeout(() => {
         log('[test] 模拟 GPU 进程崩溃')
-        handleGpuProcessGone({ reason: 'crashed', exitCode: 1 })
+        handleGpuProcessGone({
+          reason: TEST_GPU_LAUNCH_FAILED ? 'launch-failed' : 'crashed',
+          exitCode: 1,
+        })
       }, delay)
     }
   }

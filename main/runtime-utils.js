@@ -75,6 +75,42 @@ function resolveCloseAction(closeAction, legacyCloseToTray) {
   return legacyCloseToTray === false ? 'quit' : 'tray'
 }
 
+/**
+ * 服务反复退出时的重启退避：窗口内退出次数达到阈值后指数退避，避免崩溃风暴。
+ * @param {number[]} exitTimes 退出时间戳
+ * @param {number} now 当前时间
+ * @param {object} [opts]
+ * @returns {number} 建议延迟（毫秒）
+ */
+function serviceRestartDelay(exitTimes, now = Date.now(), opts = {}) {
+  const { windowMs = 2 * 60 * 1000, baseMs = 1500, maxMs = 60000, threshold = 3 } = opts
+  const recent = (exitTimes || []).filter(
+    (time) => Number.isFinite(time) && now - time <= windowMs,
+  )
+  if (recent.length < threshold) return baseMs
+  const step = Math.min(recent.length - threshold, 6)
+  return Math.min(maxMs, baseMs * 2 ** step)
+}
+
+/**
+ * 规范化界面动效模式：normal（正常）/ blur（失焦暂停）/ always（始终暂停）。
+ */
+function resolveMotionMode(mode) {
+  return mode === 'normal' || mode === 'blur' || mode === 'always' ? mode : 'blur'
+}
+
+/**
+ * 当前是否应暂停页面动画/过渡。
+ * @param {string} mode 动效模式
+ * @param {boolean} focused 窗口是否聚焦
+ */
+function shouldPauseMotion(mode, focused) {
+  const normalized = resolveMotionMode(mode)
+  if (normalized === 'always') return true
+  if (normalized === 'blur') return !focused
+  return false
+}
+
 module.exports = {
   readTail,
   redact,
@@ -82,4 +118,7 @@ module.exports = {
   rotateIfNeeded,
   shouldFallbackToSoftwareRendering,
   resolveCloseAction,
+  serviceRestartDelay,
+  resolveMotionMode,
+  shouldPauseMotion,
 }

@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.2.6 — 2026-10-26
+
+- 新增「界面动效」省电设置（设置窗口/诊断面板可见）：
+  - `blur`（默认）：窗口失焦时暂停页面动画/过渡
+  - `always`：始终暂停
+  - `normal`：保持官方动效
+- 根因实测：dsh Web UI 的会话运行态动画（state-dot 旋转、row shimmer）在本机
+  Wayland/GPU 下开销极大——同一页面 **CPU 66% → 8.2%**（GPU 25.4% → 4.2%，
+  渲染进程 35.9% → 3.1%）。
+- 只暂停无限循环动画（Web Animations API），不冻结入场动画，避免侧边栏文字
+  停在透明状态。
+- 新增 `motionMode` 配置与 `resolveMotionMode`/`shouldPauseMotion` 测试，测试总数 14。
+- 空闲基线仍为 0.2–0.4% CPU，说明 Electron 壳本身不重，问题集中在运行态动画。
+
+## 1.2.5 — 2026-10-26
+
+- 新增 `--disable-gpu-process-crash-limit`：GPU 进程反复崩溃时不再让整个客户端直接退出，
+  交给软件渲染回退处理。
+- GPU 进程 `launch-failed`（连启动都失败）时自动写入 `softwareRendering=true` 并重启，
+  不再依赖可能已经不可用的对话框。
+- 服务进程崩溃重启加入退避：2 分钟内 ≥3 次后按 3s/6s/12s… 退避（上限 60s），
+  反复退出时发系统通知，避免崩溃风暴。
+- 新增 `serviceRestartDelay` 单元测试，测试总数 13 项。
+- 背景：并行启动过多 Electron/dsh 实例时出现过 GPU 进程启动失败并连带重启后台服务，
+  本次提高异常场景下的自恢复能力。
+
 ## 1.2.4 — 2026-10-26
 
 - 修复系统托盘菜单未绑定导致顶栏点击无反应：托盘创建时立即绑定 context menu

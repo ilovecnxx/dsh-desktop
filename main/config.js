@@ -34,6 +34,9 @@ const DEFAULT_CONFIG = {
   useX11: false,
   // GPU 进程反复崩溃后自动切换软件渲染（启动器会追加 --disable-gpu）
   softwareRendering: false,
+  // 界面动效：normal 正常 / blur 窗口失焦时暂停 / always 始终暂停
+  // dsh Web UI 的运行态动画在部分 Wayland/GPU 环境下 CPU 开销很大，失焦时暂停可显著省电
+  motionMode: 'blur',
 }
 
 class Config {
