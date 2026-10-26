@@ -10,6 +10,17 @@ const { spawn } = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+
+function resolveDshBin() {
+  if (process.env.E2E_DSH_BIN) return process.env.E2E_DSH_BIN
+  for (const candidate of ['/usr/bin/dsh', '/usr/local/bin/dsh']) {
+    if (fs.existsSync(candidate)) return candidate
+  }
+  const which = spawnSync('which', ['dsh'], { encoding: 'utf8' })
+  const found = (which.stdout || '').trim()
+  return found || 'dsh'
+}
 
 const projectDir = process.env.E2E_PROJECT || process.cwd()
 
@@ -36,7 +47,9 @@ async function main() {
     }
   }
 
-  const dsh = spawn('/usr/bin/dsh', ['web', '--no-open', '--port', '0'], {
+  const dshBin = resolveDshBin()
+  console.log('E2E_DSH_BIN ' + dshBin)
+  const dsh = spawn(dshBin, ['web', '--no-open', '--port', '0'], {
     cwd: work,
     env: { ...process.env, DSH_HOME: dshHome },
     stdio: ['ignore', 'pipe', 'pipe'],
