@@ -132,7 +132,16 @@ function buildApplicationMenu(ctx) {
         { type: 'separator' },
         { label: '查看 dsh 更新说明', click: () => ctx.openExternal('https://github.com/deepseek-ai/deepseek-harness/releases') },
         { label: 'GitHub 状态…', click: () => ctx.githubStatus() },
+        {
+      label: '帮助',
+      submenu: [
+        { label: 'GitHub 状态…', click: () => ctx.githubStatus() },
+        { label: '管理 dsh 命令…', click: () => ctx.dshCommand() },
+        { label: '开发者工具 (F12)', click: () => ctx.toggleDevTools() },
+        { type: 'separator' },
         { label: '诊断信息…', click: () => ctx.openDiagnostics() },
+      ],
+    },
         { label: '开发者工具 (F12)', click: () => ctx.toggleDevTools() },
       ],
     },

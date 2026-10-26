@@ -326,7 +326,8 @@ function createWindow() {
       backgroundThrottling: true,
     },
   })
-  win.setMenuBarVisibility(false)
+  win.setMenuBarVisibility(true)
+  win.setAutoHideMenuBar(false)
   attachDevToolsShortcut(win.webContents)
 
   win.on('close', (event) => {
