@@ -384,6 +384,9 @@ function createWindow() {
     if (/^https?:/.test(win.webContents.getURL())) {
       lastMotionPaused = null
       win.webContents.send('dsh-desktop:paste-config', pasteConfigSnapshot())
+      if (process.env.DSH_DESKTOP_TEST_SIMULATE_PASTE) {
+        win.webContents.send('dsh-desktop:test-mode')
+      }
       scheduleCapture()
       maybeRunPerfHooks()
       schedulePageDiagnostics()
@@ -2029,6 +2032,38 @@ function quitApp({ stopExternal = false } = {}) {
 /* ---------------------------------------------------------------- 启动 */
 
 function registerIpc() {
+  ipcMain.handle('dsh:get-paste-config', (event) => {
+    if (!isOurSender(event.sender)) throw new Error('unexpected sender')
+    return pasteConfigSnapshot()
+  })
+  ipcMain.handle('dsh:save-pasted-text', (event, payload) => {
+    if (!isOurSender(event.sender)) throw new Error('unexpected sender')
+    return { path: savePastedText(payload && payload.text) }
+  })
+  ipcMain.handle('dsh:save-pasted-file', (event, payload) => {
+    if (!isOurSender(event.sender)) throw new Error('unexpected sender')
+    return { path: savePastedFile(payload && payload.name, payload && payload.type, payload && payload.data) }
+  })
+  ipcMain.handle('dsh:open-dropped', async (event, payload) => {
+    if (!isOurSender(event.sender)) throw new Error('unexpected sender')
+    const paths = Array.isArray(payload && payload.paths) ? payload.paths : []
+    const folders = []
+    const files = []
+    for (const item of paths) {
+      try {
+        const stat = fs.statSync(String(item))
+        if (stat.isDirectory()) folders.push(String(item))
+        else files.push(String(item))
+      } catch {
+        // ignore missing
+      }
+    }
+    if (folders.length) {
+      const service = await openFolderWorkspace(folders[0])
+      return { folder: folders[0], url: service && service.url }
+    }
+    return { files }
+  })
   ipcMain.handle('dsh-desktop:info', () => ({
     appVersion: app.getVersion(),
     dshVersion: installedVersionSafe(),
@@ -2315,6 +2350,43 @@ async function bootstrap() {
       log('[test] 隐藏窗口（用于空闲资源采样）')
       if (win && !win.isDestroyed()) win.hide()
     }, TEST_HIDE_MS)
+  }
+
+  const simulatePaste = process.env.DSH_DESKTOP_TEST_SIMULATE_PASTE
+  if (simulatePaste) {
+    setTimeout(async () => {
+      try {
+        const result = await win.webContents.executeJavaScript(
+          `(async () => {
+            if (!window.__dshDesktopTest) return 'no-test-api';
+            return window.__dshDesktopTest.pasteText(${JSON.stringify(simulatePaste)});
+          })()`,
+          true,
+        )
+        log(`[test] 模拟长文本粘贴 ${String(simulatePaste).length} 字符 -> ${result}`)
+        setTimeout(async () => {
+          try {
+            const composer = await win.webContents.executeJavaScript(
+              `(() => {
+                const el = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
+                return el ? (el.value ?? el.textContent ?? '').slice(-200) : '(no-composer)';
+              })()`,
+              true,
+            )
+            log(`[test] 输入框尾部: ${JSON.stringify(composer)}`)
+            const dir = path.join(USER_DATA, 'pastes')
+            const files = fs.existsSync(dir) ? fs.readdirSync(dir).slice(-3) : []
+            log(`[test] pastes 目录: ${JSON.stringify(files)}`)
+            setTimeout(() => app.quit(), 500)
+          } catch (err) {
+            log(`[test] 读取输入框失败: ${err.message}`)
+            app.quit()
+          }
+        }, 2500)
+      } catch (err) {
+        log(`[test] 模拟粘贴失败: ${err.message}`)
+      }
+    }, 4000)
   }
 
   if (process.env.DSH_DESKTOP_TEST_OPEN_AUX === '1') {

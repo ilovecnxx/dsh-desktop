@@ -221,6 +221,24 @@ function applyPasteConfig(cfg) {
 }
 
 ipcRenderer.on('dsh-desktop:paste-config', (_event, cfg) => applyPasteConfig(cfg))
+// 仅测试环境：主进程下发 test-mode 后暴露模拟粘贴 API（用于自动化验证）
+ipcRenderer.on('dsh-desktop:test-mode', () => {
+  try {
+    contextBridge.exposeInMainWorld('__dshDesktopTest', {
+      pasteText: async (text) => {
+        if (!text || text.length < pasteConfig.threshold) return 'below-threshold'
+        const result = await ipcRenderer.invoke('dsh:save-pasted-text', { text })
+        if (result && result.path) {
+          insertTextIntoComposer(result.path)
+          return result.path
+        }
+        return 'no-path'
+      },
+    })
+  } catch {
+    // 重复暴露时忽略
+  }
+})
 ipcRenderer.invoke('dsh:get-paste-config').then(applyPasteConfig).catch(() => {})
 
 const TOAST_ID = 'dsh-desktop-toast'

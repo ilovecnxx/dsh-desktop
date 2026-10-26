@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.7 — 2026-10-26
+
+- **重要修复**：`dsh:get-paste-config` / `dsh:save-pasted-text` / `dsh:save-pasted-file` /
+  `dsh:open-dropped` IPC 处理器之前没有注册（插入位置错误），导致长文本转文件、
+  粘贴图片保存、文件夹拖入实际不生效；现已统一注册到 `registerIpc()`。
+- 长文本粘贴端到端实测：8400 字符 → 保存为
+  `pastes/paste-<时间>-<首行摘要>.txt` → 路径插入聊天输入框。
+- 新增测试钩子 `DSH_DESKTOP_TEST_SIMULATE_PASTE`（仅测试环境）与
+  `__dshDesktopTest.pasteText`（仅 test-mode 暴露），用于自动化验证。
+- 文件夹工作区 IPC 同步修复；测试总数 28。
+
 ## 1.4.6 — 2026-10-26
 
 - **文件夹作为工作区**：拖文件夹到窗口（或菜单「打开文件夹作为工作区…」）会为该
