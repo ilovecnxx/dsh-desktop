@@ -21,9 +21,12 @@ Windows / macOS 客户端的体验：原生窗口、系统托盘、应用菜单�
   - 系统通知提醒
 - 点击升级后自动完成：停止服务 → 安装新版本 → 同步 profile 插件 → 重启服务 → 刷新界面
 - 更新使用一次性配置的**免密升级助手**，之后升级不再询问密码
-- **服务健康监控**：每 15 秒探测服务；崩溃或无响应时自动重启，并显示「正在恢复服务…」页面
+- **服务健康监控**：每 60 秒探测服务（可配置）；崩溃或无响应时自动重启，并显示「正在恢复服务…」页面
 - **客户端壳自更新**：菜单「检查客户端更新…」，从更新源原子替换客户端文件后重启（自动备份可回滚）
 - 服务自动重启可在托盘/应用菜单里开关
+- **GPU 崩溃兼容**：GPU 进程 10 分钟内反复崩溃时提示切换「软件渲染」，重启后生效
+- **日志轮转**：`main.log` / `server.log` 超过 2 MiB 自动轮转为 `.1`，避免长期运行无限增长
+- 应用菜单/托盘/设置提供「彻底退出（含网页服务）」；`Ctrl+Q` 只退出客户端、保留服务
 - **设置中心**（`Ctrl+,`）：更新通道、自动更新、自动重启、托盘、开机自启、全局快捷键、健康检查间隔
 - **诊断面板**：版本/服务状态/最近日志，一键复制诊断信息或重启服务
 - **全局快捷键** `Ctrl+Alt+Space`：显示/隐藏窗口（可关闭）。Wayland 下默认以 XWayland 运行以支持全局快捷键，可在设置里退回原生 Wayland
@@ -39,14 +42,15 @@ Windows / macOS 客户端的体验：原生窗口、系统托盘、应用菜单�
 
 ## 首次启动
 
-从应用菜单点击 **DeepSeek Harness**（或运行 `dsh-desktop`）。如果之前用浏览器版
-`dsh-start` 启动的服务仍在运行，客户端会询问：
+从应用菜单点击 **DeepSeek Harness**（或运行 `dsh-desktop`）。客户端会先显示连接窗口，
+然后校验并复用已有的 `dsh web` 服务（例如网页版入口启动的服务）；只有在明确执行
+「接管」「重启服务」或升级运行时时才会停止外部服务。
 
-- **接管并重启服务**：停止旧服务，由客户端托管（旧浏览器窗口会断开，会话记录保留）
-- **仅打开现有服务**：直接复用旧服务，暂不接管（之后可在托盘菜单「重启服务」切换）
-- **取消**：退出
+窗口关闭默认收进系统托盘，后台服务继续运行。退出有两种：
 
-接管后，窗口关闭默认收进系统托盘，后台服务继续运行；从托盘菜单可退出。
+- **退出（`Ctrl+Q`）**：只关闭客户端，保留后台/网页版服务
+- **彻底退出（含网页服务）**：同时停止客户端托管服务、已识别外部服务与用户级
+  `dsh-web-session.service`
 
 
 ## 目录结构
@@ -59,17 +63,24 @@ dsh-desktop/
 │   ├── updater.js    # npm 版本检查、免密升级、profile 插件同步
 │   ├── shell-updater.js # 客户端壳自更新（检查更新源、原子替换、回滚）
 │   ├── utility.js    # 设置中心 + 诊断面板窗口
-│   ├── config.js     # 配置持久化
+│   ├── runtime-utils.js # 有界日志读取、脱敏、日志轮转、GPU 降级策略
+│   ├── config.js     # 配置持久化（原子写入）
 │   └── menu.js       # 应用菜单 + 托盘菜单
 ├── preload/
 │   ├── preload.js    # 页面内更新提示条（Shadow DOM 注入）
 │   └── utility.js    # 设置/诊断窗口的白名单 IPC
 ├── assets/           # 图标（由官方 SVG 生成）
-└── scripts/
-    ├── install-app.sh       # 安装到用户目录（无需 root）
-    ├── setup-privileged.sh  # 一次性特权配置（sudo：升级助手 + 沙箱）
-    ├── dsh-update.sh        # root 升级助手（安装到 /usr/local/sbin）
-    └── uninstall-app.sh     # 卸载客户端
+├── scripts/
+│   ├── install-app.sh       # 原子安装到用户目录（无需 root）
+│   ├── launch-app.sh        # 启动器：显示协议/软件渲染/环境校验
+│   ├── dsh-web             # 网页版入口（flock 单实例 + token 校验）
+│   ├── configure-sandbox.sh # 复用系统 chrome-sandbox
+│   ├── setup-privileged.sh  # 一次性特权配置（sudo：升级助手 + 沙箱）
+│   ├── dsh-update.sh        # root 升级助手（安装到 /usr/local/sbin）
+│   └── uninstall-app.sh     # 卸载客户端
+├── test/                    # node --test 单元测试
+├── verification/            # 启动/恢复实测记录
+└── .github/workflows/ci.yml # CI：安装依赖并跑测试
 ```
 
 ## 安装
@@ -163,13 +174,18 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 - 客户端自更新会重启整个客户端应用（同样会重启服务），会话记录保留。
 - 不存在新版本时，手动检查会提示「已是最新版本」。
 - Linux 托盘依赖桌面环境的状态栏支持（GNOME 需 AppIndicator 扩展，Ubuntu 默认已启用）。
-- Wayland 会话下默认以 XWayland（`--ozone-platform=x11`）运行：这是全局快捷键可用的前提；
-  在设置里关闭「Wayland 兼容模式」会改用原生 Wayland，此时全局快捷键不可用。
-- 全局快捷键 `Ctrl+Alt+Space` 若与其他应用冲突，可在设置里关闭。
+- 默认使用原生 Wayland；需要全局快捷键时在设置里开启「Wayland 兼容模式（X11）」并重启。
+  XWayland 在部分显卡/驱动组合上更容易触发 GPU 进程崩溃，因此默认不开启。
+- 全局快捷键 `Ctrl+Alt+Space` 默认关闭，若与其他应用冲突可在设置里关闭。
+- 启用「软件渲染」后画面由 CPU 合成，性能会下降，但可规避 GPU 进程反复崩溃的机器。
 
-## 1.2.1 启动与恢复优化
+## 版本与优化记录
 
-详见 [优化记录及实测](OPTIMIZATION-1.2.1.md)。默认验证并复用已有 Web 服务，新增启动反馈、失败快速退出、恢复防重入、原子配置保存及有界日志读取。测试命令：`npm test`。
+- 1.2.3：GPU 崩溃软件渲染回退、日志轮转、新增 3 项测试；详见 [OPTIMIZATION-1.2.3.md](OPTIMIZATION-1.2.3.md)
+- 1.2.2：彻底退出（含网页服务）、共享 `~/.dsh/web.lock`、原子安装；详见 [OPTIMIZATION-1.2.2.md](OPTIMIZATION-1.2.2.md)
+- 1.2.1：启动与恢复优化（复用服务、快速失败、防重入、原子配置、有界日志）；详见 [OPTIMIZATION-1.2.1.md](OPTIMIZATION-1.2.1.md)
+
+完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。测试命令：`npm test`。
 
 ## 开发与测试
 

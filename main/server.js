@@ -11,7 +11,7 @@ const http = require('node:http')
 const os = require('node:os')
 const path = require('node:path')
 
-const { readTail } = require('./runtime-utils')
+const { readTail, rotateIfNeeded } = require('./runtime-utils')
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -223,6 +223,8 @@ class ServerManager {
     fs.accessSync(bin, fs.constants.X_OK)
     this.pushLog(`启动（锁 ${this.lockFile}）: ${bin} web --no-open --port ${this.port}`)
     fs.mkdirSync(path.dirname(this.logFile), { recursive: true })
+    // 服务日志超过 2 MiB 时轮转，避免长期运行无限增长
+    rotateIfNeeded(this.logFile, 2 * 1024 * 1024)
     const logStream = fs.createWriteStream(this.logFile, { flags: 'a', mode: 0o600 })
     logStream.on('error', (err) => { this.pushLog(`写入服务日志失败: ${err.message}`) })
     logStream.write(`\n===== ${new Date().toISOString()} DeepSeek Harness 桌面客户端启动服务 =====\n`)

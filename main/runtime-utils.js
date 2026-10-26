@@ -25,4 +25,49 @@ function updateDelay(lastCheckAt, interval, minimumDelay) {
   return Math.max(minimumDelay, interval - (Date.now() - last))
 }
 
-module.exports = { readTail, redact, updateDelay }
+/**
+ * 日志超过上限时轮转为 <file>.1（只保留一份旧日志），返回是否发生轮转。
+ * 读取/写入失败时静默返回 false，不影响主流程。
+ */
+function rotateIfNeeded(file, maxBytes = 2 * 1024 * 1024) {
+  try {
+    const stat = fs.statSync(file)
+    if (stat.size < maxBytes) return false
+    const backup = `${file}.1`
+    try {
+      fs.rmSync(backup, { force: true })
+    } catch {
+      // ignore
+    }
+    fs.renameSync(file, backup)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * GPU 进程在时间窗口内反复崩溃时，建议切换到软件渲染。
+ * @param {number[]} crashTimes 崩溃时间戳（毫秒）
+ * @param {number} now 当前时间戳
+ * @param {number} windowMs 统计窗口
+ * @param {number} threshold 触发阈值
+ */
+function shouldFallbackToSoftwareRendering(
+  crashTimes,
+  now = Date.now(),
+  windowMs = 10 * 60 * 1000,
+  threshold = 2,
+) {
+  if (!Array.isArray(crashTimes) || crashTimes.length === 0) return false
+  const recent = crashTimes.filter((time) => Number.isFinite(time) && now - time <= windowMs)
+  return recent.length >= threshold
+}
+
+module.exports = {
+  readTail,
+  redact,
+  updateDelay,
+  rotateIfNeeded,
+  shouldFallbackToSoftwareRendering,
+}

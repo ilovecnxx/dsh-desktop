@@ -42,7 +42,14 @@ else
   echo 'DeepSeek Harness：没有可连接的图形会话，请在桌面会话中启动。' >&2
   exit 1
 fi
+# GPU 反复崩溃时可用软件渲染启动（设置里开启，或 DSH_DESKTOP_SOFTWARE_RENDERING=1）
+software="${DSH_DESKTOP_SOFTWARE_RENDERING:-}"
+if [[ -z "$software" ]]; then
+  software=$(/usr/bin/node -e 'try { process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1])).softwareRendering === true ? "1" : "0") } catch { process.stdout.write("0") }' "$config")
+fi
+extra=()
+if [[ "$software" == 1 ]]; then extra+=(--disable-gpu); fi
 for arg in "$@"; do
-  if [[ "$arg" == --ozone-platform* ]]; then exec "$APP_ROOT/dsh-desktop" "$@"; fi
+  if [[ "$arg" == --ozone-platform* ]]; then exec "$APP_ROOT/dsh-desktop" "${extra[@]}" "$@"; fi
 done
-exec "$APP_ROOT/dsh-desktop" "--ozone-platform=$platform" "$@"
+exec "$APP_ROOT/dsh-desktop" "--ozone-platform=$platform" "${extra[@]}" "$@"

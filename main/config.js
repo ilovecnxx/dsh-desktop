@@ -30,6 +30,8 @@ const DEFAULT_CONFIG = {
   port: 3080,
   // 默认使用原生 Wayland；需要全局快捷键时再手动开启 XWayland。
   useX11: false,
+  // GPU 进程反复崩溃后自动切换软件渲染（启动器会追加 --disable-gpu）
+  softwareRendering: false,
 }
 
 class Config {

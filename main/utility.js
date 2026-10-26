@@ -82,6 +82,7 @@ function settingsHtml() {
     </select></div>
   <div class="row"><div><div class="label">关闭窗口时收进托盘</div></div><input type="checkbox" id="closeToTray"></div>
   <div class="row"><div><div class="label">Wayland 兼容模式（X11）</div><div class="hint">优先使用可用的 X11；认证不可用时回退到 Wayland，重启生效</div></div><input type="checkbox" id="useX11"></div>
+  <div class="row"><div><div class="label">软件渲染</div><div class="hint">GPU 进程反复崩溃时启用，重启生效</div></div><input type="checkbox" id="softwareRendering"></div>
   <div class="row"><div><div class="label">开机自启</div><div class="hint">登录后自动启动客户端</div></div><input type="checkbox" id="autostart"></div>
   <div class="row"><div><div class="label">全局快捷键</div><div class="hint" id="shortcutHint"></div></div><input type="checkbox" id="globalShortcutEnabled"></div>
   <div class="row"><div><div class="label">客户端更新源</div></div><div class="value" id="shellSource">—</div></div>
@@ -108,6 +109,7 @@ async function refresh() {
   $('autoRestartService').checked = !!state.config.autoRestartService
   $('closeToTray').checked = !!state.config.closeToTray
   $('useX11').checked = !!state.config.useX11
+  $('softwareRendering').checked = !!state.config.softwareRendering
   $('globalShortcutEnabled').checked = !!state.config.globalShortcutEnabled
   $('autostart').checked = !!state.autostart
   $('healthIntervalMs').value = String(state.config.healthIntervalMs || 60000)
@@ -125,6 +127,7 @@ $('save').addEventListener('click', async () => {
       autoRestartService: $('autoRestartService').checked,
       closeToTray: $('closeToTray').checked,
       useX11: $('useX11').checked,
+      softwareRendering: $('softwareRendering').checked,
       globalShortcutEnabled: $('globalShortcutEnabled').checked,
       healthIntervalMs: Number($('healthIntervalMs').value),
       autostart: $('autostart').checked,
@@ -177,6 +180,7 @@ async function refresh() {
     ['服务 PID', info.servicePid || '—'],
     ['端口', info.port],
     ['全局快捷键', info.shortcut],
+    ['软件渲染', info.softwareRendering ? '开' : '关（GPU 加速）'],
     ['Electron', info.electron],
     ['Node', info.node],
     ['系统', info.os],

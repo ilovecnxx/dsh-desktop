@@ -15,7 +15,13 @@ const path = require('node:path')
 
 const { Config } = require('./config')
 const { ServerManager, probe, findPortPid, readCmdline, isDshCommand, validToken } = require('./server')
-const { readTail: boundedReadTail, redact, updateDelay } = require('./runtime-utils')
+const {
+  readTail: boundedReadTail,
+  redact,
+  updateDelay,
+  rotateIfNeeded,
+  shouldFallbackToSoftwareRendering,
+} = require('./runtime-utils')
 const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
 const utility = require('./utility')
@@ -55,6 +61,9 @@ const EXIT_AFTER_UPGRADE = process.env.DSH_DESKTOP_EXIT_AFTER_UPGRADE === '1'
 const TEST_KILL_SERVER_MS = Number(process.env.DSH_DESKTOP_TEST_KILL_SERVER_MS || 0)
 const TEST_STOP_SERVER_MS = Number(process.env.DSH_DESKTOP_TEST_STOP_SERVER_MS || 0)
 const TEST_SHELL_UPDATE = process.env.DSH_DESKTOP_TEST_SHELL_UPDATE === '1'
+// 测试钩子：模拟 GPU 进程崩溃
+const TEST_GPU_CRASH_MS = Number(process.env.DSH_DESKTOP_TEST_GPU_CRASH_MS || 0)
+const TEST_GPU_FALLBACK = process.env.DSH_DESKTOP_TEST_GPU_FALLBACK === '1'
 const SHELL_NO_RELAUNCH = process.env.DSH_DESKTOP_SHELL_UPDATE_NO_RELAUNCH === '1'
 const EXIT_AFTER_MS = Number(process.env.DSH_DESKTOP_EXIT_AFTER_MS || 0)
 const NO_TRAY = process.env.DSH_DESKTOP_NO_TRAY === '1'
@@ -82,6 +91,10 @@ let boundsTimer = null
 let healthChecking = false
 let lastRendererRecovery = 0
 let quitPromise = null
+let logWrites = 0
+const gpuCrashTimes = []
+let gpuFallbackInProgress = false
+const MAIN_LOG_MAX_BYTES = 2 * 1024 * 1024
 const bootStartedAt = performance.now()
 
 function log(...args) {
@@ -91,6 +104,8 @@ function log(...args) {
   console.log(line)
   try {
     fs.mkdirSync(USER_DATA, { recursive: true })
+    // 每 200 行检查一次大小，避免每次写日志都 stat
+    if (++logWrites % 200 === 0) rotateIfNeeded(MAIN_LOG, MAIN_LOG_MAX_BYTES)
     fs.appendFileSync(MAIN_LOG, line + '\n')
   } catch {
     // ignore
@@ -117,6 +132,63 @@ function notify(title, body) {
   } catch {
     // ignore
   }
+}
+
+const GPU_CRASH_WINDOW_MS = 10 * 60 * 1000
+const GPU_CRASH_THRESHOLD = 2
+
+/** 处理 GPU 进程崩溃：10 分钟内反复崩溃则引导切换到软件渲染。 */
+function handleGpuProcessGone(details = {}) {
+  const now = Date.now()
+  gpuCrashTimes.push(now)
+  // 只保留窗口内的时间戳，避免数组无限增长
+  while (gpuCrashTimes.length && now - gpuCrashTimes[0] > GPU_CRASH_WINDOW_MS) gpuCrashTimes.shift()
+  log(
+    `GPU 进程退出 reason=${details.reason || 'unknown'} exitCode=${details.exitCode ?? 'unknown'}`,
+  )
+  if (!config || config.get('softwareRendering') || gpuFallbackInProgress) return
+  if (!shouldFallbackToSoftwareRendering(gpuCrashTimes, now, GPU_CRASH_WINDOW_MS, GPU_CRASH_THRESHOLD)) {
+    return
+  }
+  gpuFallbackInProgress = true
+  log('GPU 进程 10 分钟内反复崩溃，准备切换到软件渲染')
+  notify('图形加速异常', 'GPU 进程反复崩溃，可在设置中启用软件渲染后重启客户端。')
+  if (TEST_GPU_FALLBACK) {
+    config.set('softwareRendering', true)
+    log('[test] 已写入 softwareRendering=true（测试模式不重启）')
+    return
+  }
+  if (!win || win.isDestroyed()) return
+  dialog
+    .showMessageBox(win, {
+      type: 'warning',
+      title: '图形加速异常',
+      message: 'GPU 进程反复崩溃',
+      detail:
+        '可以让客户端改用软件渲染后重启（会一并重启后台服务，会话记录保留）。\n' +
+        '如果选择稍后，也可以随时在「设置 → 软件渲染」里手动开启。',
+      buttons: ['立即重启并启用软件渲染', '稍后'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    .then(async (answer) => {
+      if (answer.response === 0) {
+        config.set('softwareRendering', true)
+        try {
+          await server.stop()
+        } catch (err) {
+          log(`切换软件渲染前停止服务失败: ${err.message}`)
+        }
+        app.relaunch()
+        app.exit(0)
+      } else {
+        gpuFallbackInProgress = false
+      }
+    })
+    .catch(() => {
+      gpuFallbackInProgress = false
+    })
 }
 
 function installedVersionSafe() {
@@ -813,6 +885,7 @@ function settingsSnapshot() {
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
       useX11: config.get('useX11') !== false,
+      softwareRendering: Boolean(config.get('softwareRendering')),
     },
     autostart: autostartEnabled(),
     globalShortcut: config.get('globalShortcut'),
@@ -835,6 +908,7 @@ function applySettingsPatch(patch) {
   const interval = Math.max(5000, Number(merged.healthIntervalMs) || 60000)
   config.set('healthIntervalMs', interval)
   config.set('useX11', Boolean(merged.useX11))
+  config.set('softwareRendering', Boolean(merged.softwareRendering))
   if (interval !== Number(previous.config.healthIntervalMs)) startHealthMonitor()
   if (Boolean(merged.globalShortcutEnabled) !== Boolean(previous.config.globalShortcutEnabled)) {
     if (merged.globalShortcutEnabled) registerGlobalShortcut()
@@ -903,6 +977,7 @@ function buildDiagnostics() {
     servicePid: (server && (server.child?.pid || server.externalPid)) || null,
     port,
     shortcut: `${config.get('globalShortcut')}（${shortcutRegistered ? '已生效' : '未生效'}）`,
+    softwareRendering: Boolean(config.get('softwareRendering')),
     electron: process.versions.electron,
     node: process.versions.node,
     os: `${os.type()} ${os.release()} ${os.arch()}`,
@@ -1105,6 +1180,7 @@ async function showAbout() {
       `更新通道：${config.get('channel')}\n` +
       `服务模式：${managed ? '客户端托管' : '复用外部服务'}\n` +
       `服务自动重启：${config.get('autoRestartService') ? '开' : '关'}\n` +
+      `软件渲染：${config.get('softwareRendering') ? '开' : '关（GPU 加速）'}\n` +
       `端口：${port}\n` +
       `Electron：v${process.versions.electron}\n` +
       `Node：v${process.versions.node}`,
@@ -1186,6 +1262,10 @@ function startAutoCheck() {
 
 async function bootstrap() {
   config = new Config(USER_DATA)
+  rotateIfNeeded(MAIN_LOG, MAIN_LOG_MAX_BYTES)
+  app.on('child-process-gone', (_event, details) => {
+    if (details && details.type === 'GPU') handleGpuProcessGone(details)
+  })
   if (!PORT_ENV) {
     try {
       port = await choosePort(Number(config.get('port') || 3080))
@@ -1262,6 +1342,15 @@ async function bootstrap() {
         log(`[test] 壳更新结果 ${JSON.stringify(result)}`)
       }
     }, TEST_UPGRADE_DELAY)
+  }
+
+  if (TEST_GPU_CRASH_MS > 0) {
+    for (const delay of [TEST_GPU_CRASH_MS, TEST_GPU_CRASH_MS + 800]) {
+      setTimeout(() => {
+        log('[test] 模拟 GPU 进程崩溃')
+        handleGpuProcessGone({ reason: 'crashed', exitCode: 1 })
+      }, delay)
+    }
   }
 
   if (TEST_KILL_SERVER_MS > 0) {
