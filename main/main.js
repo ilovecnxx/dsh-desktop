@@ -368,6 +368,10 @@ function createWindow() {
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (event, url) => {
+    if (/^file:/i.test(String(url))) {
+      event.preventDefault()
+      return
+    }
     try {
       const target = new URL(url)
       const local = ['127.0.0.1', 'localhost'].includes(target.hostname)
@@ -2044,6 +2048,18 @@ function registerIpc() {
     if (!isOurSender(event.sender)) throw new Error('unexpected sender')
     return { path: savePastedFile(payload && payload.name, payload && payload.type, payload && payload.data) }
   })
+  ipcMain.on('dsh:drop-diagnostics', async (event, payload) => {
+    if (!isOurSender(event.sender)) return
+    try {
+      log(`[drop-diag] ${JSON.stringify(payload)}`)
+      const image = await event.sender.capturePage()
+      const file = path.join(USER_DATA, 'drop-diag-latest.png')
+      fs.writeFileSync(file, image.toPNG())
+      log(`[drop-diag] 截图已保存 ${file}`)
+    } catch (err) {
+      log(`[drop-diag] 失败: ${err.message}`)
+    }
+  })
   ipcMain.handle('dsh:open-dropped', async (event, payload) => {
     if (!isOurSender(event.sender)) throw new Error('unexpected sender')
     const paths = Array.isArray(payload && payload.paths) ? payload.paths : []
@@ -2350,6 +2366,35 @@ async function bootstrap() {
       log('[test] 隐藏窗口（用于空闲资源采样）')
       if (win && !win.isDestroyed()) win.hide()
     }, TEST_HIDE_MS)
+  }
+
+  if (process.env.DSH_DESKTOP_TEST_DROP_OVERLAY === '1') {
+    setTimeout(async () => {
+      try {
+        const result = await win.webContents.executeJavaScript(
+          `(() => {
+            const overlay = () => !!document.getElementById('dsh-desktop-drop-overlay');
+            const files = new DataTransfer();
+            files.items.add(new File(['x'], 'a.png', { type: 'image/png' }));
+            const enter = new DragEvent('dragenter', { bubbles: true, cancelable: true });
+            Object.defineProperty(enter, 'dataTransfer', { value: files });
+            document.body.dispatchEvent(enter);
+            const shown = overlay();
+            const other = new DataTransfer();
+            other.setData('text/uri-list', 'file:///tmp/a.png');
+            const drop = new DragEvent('drop', { bubbles: true, cancelable: true });
+            Object.defineProperty(drop, 'dataTransfer', { value: other });
+            document.body.dispatchEvent(drop);
+            return { shown, hiddenAfterDrop: !overlay() };
+          })()`,
+          true,
+        )
+        log(`[test] drag overlay ${JSON.stringify(result)}`)
+      } catch (err) {
+        log(`[test] drag overlay test failed: ${err.message}`)
+      }
+      setTimeout(() => app.quit(), 800)
+    }, 4000)
   }
 
   const simulatePaste = process.env.DSH_DESKTOP_TEST_SIMULATE_PASTE

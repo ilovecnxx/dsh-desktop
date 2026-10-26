@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.9 — 2026-10-26
+
+- 拖拽图片后界面模糊的进一步处理：
+  - 拖拽后 600ms 自动诊断：记录全屏模糊遮罩/弹层的 class、样式、位置与文本，
+    并把当前页面截图保存到 `~/.config/dsh-desktop/drop-diag-latest.png`；
+  - 检测到 dsh 自带的全屏模糊弹层时自动发送 Esc 关闭，并提示；
+  - `will-navigate` 阻止 `file://` 导航（避免拖入图片把页面导航成图片查看器）；
+  - dragover/drop 对 `text/uri-list` 也按文件处理并 preventDefault。
+- 测试总数 28。
+
 ## 1.4.8 — 2026-10-26
 
 - 修复拖入图片后界面“模糊”：拖拽遮罩层在图片 drop 时因 `dataTransfer.types`

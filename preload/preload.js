@@ -140,7 +140,11 @@ let dropOverlayTimer = null
 
 function hasFiles(event) {
   const types = event.dataTransfer && event.dataTransfer.types
-  return !!types && Array.prototype.includes.call(types, 'Files')
+  if (!types) return false
+  return (
+    Array.prototype.includes.call(types, 'Files') ||
+    Array.prototype.includes.call(types, 'text/uri-list')
+  )
 }
 
 function showDropOverlay() {
@@ -174,6 +178,42 @@ function hideDropOverlay() {
     dropOverlayTimer = null
   }
   document.getElementById(DROP_OVERLAY_ID)?.remove()
+}
+
+function isFullscreenBlurMask(el) {
+  try {
+    const st = getComputedStyle(el)
+    const blur = /blur/i.test(st.backdropFilter || '') || /blur/i.test(st.filter || '')
+    if (!blur) return false
+    const r = el.getBoundingClientRect()
+    return r.width >= window.innerWidth * 0.9 && r.height >= window.innerHeight * 0.9
+  } catch {
+    return false
+  }
+}
+
+function collectDropDiagnostics() {
+  const masks = []
+  for (const el of document.querySelectorAll('*')) {
+    if (!isFullscreenBlurMask(el)) continue
+    const r = el.getBoundingClientRect()
+    masks.push({
+      tag: el.tagName.toLowerCase(),
+      cls: String(el.getAttribute('class') || '').slice(0, 120),
+      role: el.getAttribute('role') || '',
+      backdropFilter: getComputedStyle(el).backdropFilter,
+      filter: getComputedStyle(el).filter,
+      rect: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)],
+      text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+    })
+    if (masks.length >= 5) break
+  }
+  return {
+    overlay: !!document.getElementById(DROP_OVERLAY_ID),
+    masks,
+    dialogs: document.querySelectorAll('[role="dialog"], dialog').length,
+    activeTag: document.activeElement ? document.activeElement.tagName : '',
+  }
 }
 
 /** 兜底：拖拽事件序列不完整时（如图片 drop 的 types 不含 Files），1.5 秒后自动收起 */
@@ -400,6 +440,19 @@ window.addEventListener(
         if (ok) showToast(`已处理 ${files.length} 个文件/文件夹`)
       })
       .finally(() => hideDropOverlay())
+    // 拖拽后诊断 + 自动关闭 dsh 的全屏模糊遮罩（图片预览弹层）
+    setTimeout(() => {
+      const diag = collectDropDiagnostics()
+      try {
+        ipcRenderer.send('dsh:drop-diagnostics', diag)
+      } catch {
+        // ignore
+      }
+      if (diag.masks.length > 0 && !diag.overlay) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        showToast('已自动关闭拖拽后残留的模糊弹层')
+      }
+    }, 600)
   },
   true,
 )
