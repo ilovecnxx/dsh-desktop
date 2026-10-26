@@ -95,15 +95,7 @@ async function main() {
     before[name] = group.reduce((sum, pid) => sum + cpuTicks(pid), 0)
   }
   await sleep(sampleSeconds * 1000)
-  const hz = Number(
-    (() => {
-      try {
-        return require('node:os').constants ? 100 : 100
-      } catch {
-        return 100
-      }
-    })(),
-  )
+  const hz = Number(require('node:os').constants?.SC_CLK_TCK || os.constants?.SC_CLK_TCK || 100) || 100
   const result = {
     ts: new Date().toISOString(),
     sampleSeconds,

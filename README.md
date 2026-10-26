@@ -196,6 +196,7 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 ## 版本与优化记录
 
 - 1.4.10：外部服务模式下自动拉起用户服务，避免启动卡 90 秒；详见 [OPTIMIZATION-1.4.10.md](OPTIMIZATION-1.4.10.md)
+- 1.5.2：测试/性能专项、属主 EACCES 修复、内存释放按钮；报告见 [TEST-REPORT-1.5.1.md](docs/TEST-REPORT-1.5.1.md)
 - 1.5.1：修复 GitHub 状态等入口不可见（菜单栏/托盘）；详见 [OPTIMIZATION-1.5.1.md](OPTIMIZATION-1.5.1.md)
 - 1.5.0：官方功能对齐（GitHub 状态、dsh 命令管理、F12 DevTools、退出确认）；详见 [OPTIMIZATION-1.5.0.md](OPTIMIZATION-1.5.0.md)、[OFFICIAL-PARITY.md](docs/OFFICIAL-PARITY.md)
 - 1.4.24：窗口标题栏显示服务模式；详见 [OPTIMIZATION-1.4.24.md](OPTIMIZATION-1.4.24.md)

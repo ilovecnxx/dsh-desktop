@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.2 — 2026-10-26
+
+- 测试与性能专项（无新功能）：
+  - 全量单测 30/30、语法检查、stub e2e、真实附件 e2e、打包构建全部通过；
+  - 日志审计发现 root 模式切换时的 `~/.dsh` 属主 `EACCES`，已通过
+    owner-sync 按需 chown（10 秒）+ 切换前 `dsh-fix-owner` 修复；
+  - `dsh-owner-sync` CPU 从约 2% 降到约 0.5%；
+  - `perf-baseline.js` 修正 HZ 硬编码；
+  - 诊断面板新增「重新加载界面」用于长会话释放内存；
+  - 报告：`docs/TEST-REPORT-1.5.1.md`。
+
 ## 1.5.1 — 2026-10-26
 
 - 修复 GitHub 状态/dsh 命令/开发者工具入口“看不到”：窗口菜单栏默认隐藏，

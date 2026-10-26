@@ -1270,6 +1270,7 @@ async function tryStartUserService(targetPort) {
 
 async function ensureServer() {
   if (config.get('externalService')) {
+    if (port === 3080) tryFixDshOwner()
     let existing = await server.detectExisting()
     if (!existing || !existing.url) {
       await tryStartUserService(port)
@@ -1934,6 +1935,17 @@ function portOpen(port, timeoutMs = 1200) {
   })
 }
 
+function tryFixDshOwner() {
+  const helper = '/usr/local/sbin/dsh-fix-owner'
+  if (!fs.existsSync(helper)) return
+  try {
+    execFileSync('/usr/bin/sudo', ['-n', helper], { timeout: 30000, stdio: 'ignore' })
+    log('已同步 ~/.dsh 文件属主为 user')
+  } catch (err) {
+    log(`同步 ~/.dsh 属主失败: ${err.message}`)
+  }
+}
+
 function launcherPath() {
   const candidate = path.join(os.homedir(), '.local', 'bin', 'dsh-desktop')
   return fs.existsSync(candidate) ? candidate : null
@@ -2003,6 +2015,7 @@ async function switchService(port, label) {
   } catch (err) {
     log(`停止 ${labelOf(other)} 失败: ${err.message}`)
   }
+  if (target === 3080) tryFixDshOwner()
   let ready = false
   try {
     await serviceAction(target, 'start')
@@ -2233,6 +2246,10 @@ async function handleUtilityAction(payload) {
     case 'ui-report': {
       const file = await captureUiReport('manual')
       return { message: file ? `界面状态已保存：${file}` : '采集界面状态失败' }
+    }
+    case 'reload-ui': {
+      await win.loadURL(server && server.tokenUrl ? server.tokenUrl : `http://127.0.0.1:${port}/`)
+      return { message: '界面已重新加载（释放渲染进程内存）' }
     }
     case 'github-status':
       return showGithubStatus()

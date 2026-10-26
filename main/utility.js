@@ -226,6 +226,7 @@ function diagnosticsHtml() {
     <button id="root-service-stop">停止 root 服务</button>
     <button id="close-workspaces">关闭全部工作区</button>
     <button id="stability-report">导出稳定性报告</button>
+    <button id="reload-ui">重新加载界面</button>
     <button id="stability-summary">稳定性汇总</button>
     <button id="migration-wizard">迁移向导</button>
     <button id="check-github-release">从 GitHub 检查更新</button>
@@ -272,7 +273,7 @@ $('copy').addEventListener('click', async () => {
   catch (err) { toast('复制失败：' + err.message) }
 })
 $('refresh').addEventListener('click', () => refresh().then(() => toast('已刷新')))
-for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['export-sessions','export-sessions'],['export-markdown','export-markdown'],['rollback-shell','rollback-shell'],['rollback-dsh','rollback-dsh'],['systemd-enable','systemd-enable'],['systemd-disable','systemd-disable'],['fix-owner','fix-owner'],['close-workspaces','close-workspaces'],['stability-report','stability-report'],['stability-summary','stability-summary'],['migration-wizard','migration-wizard'],['check-github-release','check-github-release'],['github-status','github-status'],['dsh-command','dsh-command'],['ui-report','ui-report'],['switch-dev-service','switch-dev-service'],['switch-test-service','switch-test-service'],['root-service-start','root-service-start'],['root-service-stop','root-service-stop'],['clear-cache','clear-cache']]) {
+for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['export-sessions','export-sessions'],['export-markdown','export-markdown'],['rollback-shell','rollback-shell'],['rollback-dsh','rollback-dsh'],['systemd-enable','systemd-enable'],['systemd-disable','systemd-disable'],['fix-owner','fix-owner'],['close-workspaces','close-workspaces'],['stability-report','stability-report'],['reload-ui','reload-ui'],['stability-summary','stability-summary'],['migration-wizard','migration-wizard'],['check-github-release','check-github-release'],['github-status','github-status'],['dsh-command','dsh-command'],['ui-report','ui-report'],['switch-dev-service','switch-dev-service'],['switch-test-service','switch-test-service'],['root-service-start','root-service-start'],['root-service-stop','root-service-stop'],['clear-cache','clear-cache']]) {
   $(id).addEventListener('click', async () => {
     try { const res = await window.dshUtility.invoke('diagnostics:action', { action }); toast(res.message || '完成') }
     catch (err) { toast('操作失败：' + err.message) }
