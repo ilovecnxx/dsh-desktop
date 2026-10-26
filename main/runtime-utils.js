@@ -96,7 +96,9 @@ function serviceRestartDelay(exitTimes, now = Date.now(), opts = {}) {
  * 规范化界面动效模式：normal（正常）/ blur（失焦暂停）/ always（始终暂停）。
  */
 function resolveMotionMode(mode) {
-  return mode === 'normal' || mode === 'blur' || mode === 'always' ? mode : 'blur'
+  return mode === 'normal' || mode === 'blur' || mode === 'auto' || mode === 'always'
+    ? mode
+    : 'auto'
 }
 
 /**
@@ -104,10 +106,11 @@ function resolveMotionMode(mode) {
  * @param {string} mode 动效模式
  * @param {boolean} focused 窗口是否聚焦
  */
-function shouldPauseMotion(mode, focused) {
+function shouldPauseMotion(mode, focused, idleMs = 0, idleThresholdMs = 90 * 1000) {
   const normalized = resolveMotionMode(mode)
   if (normalized === 'always') return true
   if (normalized === 'blur') return !focused
+  if (normalized === 'auto') return !focused || idleMs >= idleThresholdMs
   return false
 }
 

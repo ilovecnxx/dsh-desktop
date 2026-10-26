@@ -25,8 +25,9 @@ Windows / macOS 客户端的体验：原生窗口、系统托盘、应用菜单�
 - **客户端壳自更新**：菜单「检查客户端更新…」，从更新源原子替换客户端文件后重启（自动备份可回滚）
 - 服务自动重启可在托盘/应用菜单里开关
 - **GPU 崩溃兼容**：GPU 进程反复崩溃时提示切换「软件渲染」（启动失败时自动切换重启），重启后生效
-- **界面动效省电**：默认窗口失焦时自动暂停页面动画（可设正常/始终暂停）；
-  实测运行态动画 CPU 66% → 6.1%
+- **界面动效省电**：默认「自动」模式（失焦或空闲 90 秒暂停循环动画，输入即恢复），
+  可设正常/仅失焦/始终暂停；实测运行态动画 CPU 66% → 8.2%
+- **Linux 安装包**：支持 `npm run dist:linux` 生成 `.deb` / AppImage，Release CI 自动发布
 - **日志轮转**：`main.log` / `server.log` 超过 2 MiB 自动轮转为 `.1`，避免长期运行无限增长
 - 应用菜单/托盘/设置提供「彻底退出（含网页服务）」；`Ctrl+Q` 只退出客户端、保留服务
 - 关闭窗口行为可选：收进托盘 / 退出客户端（保留服务）/ 彻底退出；托盘菜单创建时即绑定
@@ -184,7 +185,8 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 
 ## 版本与优化记录
 
-- 1.2.6：界面动效省电（失焦暂停动画，CPU 66%→6.1%）；详见 [OPTIMIZATION-1.2.6.md](OPTIMIZATION-1.2.6.md)
+- 1.3.0：自动节能动效（空闲暂停）、`.deb`/AppImage 打包与 Release CI；详见 [OPTIMIZATION-1.3.0.md](OPTIMIZATION-1.3.0.md)
+- 1.2.6：界面动效省电（精准暂停循环动画，CPU 66%→8.2%）；详见 [OPTIMIZATION-1.2.6.md](OPTIMIZATION-1.2.6.md)
 - 1.2.5：GPU 崩溃不再直接退出、启动失败自动软件渲染、服务崩溃退避重启；详见 [OPTIMIZATION-1.2.5.md](OPTIMIZATION-1.2.5.md)
 - 1.2.4：修复托盘菜单绑定（顶栏点击无反应）、关闭窗口行为可选；详见 [OPTIMIZATION-1.2.4.md](OPTIMIZATION-1.2.4.md)
 - 1.2.3：GPU 崩溃软件渲染回退、日志轮转、新增 3 项测试；详见 [OPTIMIZATION-1.2.3.md](OPTIMIZATION-1.2.3.md)
@@ -192,6 +194,14 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 - 1.2.1：启动与恢复优化（复用服务、快速失败、防重入、原子配置、有界日志）；详见 [OPTIMIZATION-1.2.1.md](OPTIMIZATION-1.2.1.md)
 
 完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。测试命令：`npm test`。
+
+## 打包分发
+
+```bash
+npm run dist:linux     # 生成 dist/*.deb 与 dist/*.AppImage
+```
+
+详细步骤、安装方式与发布流程见 [docs/PACKAGING.md](docs/PACKAGING.md)。
 
 ## 开发与测试
 

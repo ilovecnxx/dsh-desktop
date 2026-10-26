@@ -85,7 +85,7 @@ function settingsHtml() {
   <div class="row"><div><div class="label">Wayland 兼容模式（X11）</div><div class="hint">优先使用可用的 X11；认证不可用时回退到 Wayland，重启生效</div></div><input type="checkbox" id="useX11"></div>
   <div class="row"><div><div class="label">软件渲染</div><div class="hint">GPU 进程反复崩溃时启用，重启生效</div></div><input type="checkbox" id="softwareRendering"></div>
   <div class="row"><div><div class="label">界面动效</div><div class="hint">会话运行时的动画在部分 Wayland/GPU 上很耗 CPU；失焦暂停可显著省电</div></div>
-    <select id="motionMode"><option value="blur">失焦时暂停</option><option value="normal">正常</option><option value="always">始终暂停</option></select></div>
+    <select id="motionMode"><option value="auto">自动（失焦或空闲时暂停）</option><option value="normal">正常</option><option value="blur">仅失焦时暂停</option><option value="always">始终暂停</option></select></div>
   <div class="row"><div><div class="label">开机自启</div><div class="hint">登录后自动启动客户端</div></div><input type="checkbox" id="autostart"></div>
   <div class="row"><div><div class="label">全局快捷键</div><div class="hint" id="shortcutHint"></div></div><input type="checkbox" id="globalShortcutEnabled"></div>
   <div class="row"><div><div class="label">客户端更新源</div></div><div class="value" id="shellSource">—</div></div>
@@ -113,7 +113,7 @@ async function refresh() {
   $('closeAction').value = state.config.closeAction || 'tray'
   $('useX11').checked = !!state.config.useX11
   $('softwareRendering').checked = !!state.config.softwareRendering
-  $('motionMode').value = state.config.motionMode || 'blur'
+  $('motionMode').value = state.config.motionMode || 'auto'
   $('globalShortcutEnabled').checked = !!state.config.globalShortcutEnabled
   $('autostart').checked = !!state.autostart
   $('healthIntervalMs').value = String(state.config.healthIntervalMs || 60000)
@@ -186,7 +186,7 @@ async function refresh() {
     ['端口', info.port],
     ['全局快捷键', info.shortcut],
     ['软件渲染', info.softwareRendering ? '开' : '关（GPU 加速）'],
-    ['界面动效', info.motionMode === 'always' ? '始终暂停' : info.motionMode === 'blur' ? '失焦暂停' : '正常'],
+    ['界面动效', info.motionMode === 'always' ? '始终暂停' : info.motionMode === 'blur' ? '仅失焦暂停' : info.motionMode === 'auto' ? '自动（失焦/空闲暂停）' : '正常'],
     ['Electron', info.electron],
     ['Node', info.node],
     ['系统', info.os],

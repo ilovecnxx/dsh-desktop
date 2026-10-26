@@ -105,6 +105,8 @@ let lastRendererRecovery = 0
 let quitPromise = null
 let logWrites = 0
 let lastMotionPaused = null
+let lastActivityAt = Date.now()
+let motionTimer = null
 const gpuCrashTimes = []
 const serviceExitTimes = []
 let gpuFallbackInProgress = false
@@ -297,8 +299,18 @@ function createWindow() {
       quitApp({ stopExternal: true })
     }
   })
-  win.on('focus', () => syncMotionState())
-  win.on('blur', () => syncMotionState())
+  win.on('focus', () => {
+    markActivity()
+    syncMotionState()
+  })
+  win.on('blur', () => {
+    markActivity()
+    syncMotionState()
+  })
+  win.webContents.on('before-input-event', () => {
+    markActivity()
+    syncMotionState()
+  })
   win.on('hide', () => saveWindowBounds())
   win.on('minimize', () => saveWindowBounds())
   win.on('moved', () => scheduleSaveWindowBounds())
@@ -402,10 +414,20 @@ const RESUME_MOTION_JS = `(() => {
   return resumed;
 })()`
 
+function markActivity() {
+  lastActivityAt = Date.now()
+}
+
 function syncMotionState() {
   if (!win || win.isDestroyed()) return
   const mode = resolveMotionMode(config.get('motionMode'))
-  const paused = shouldPauseMotion(mode, win.isFocused())
+  const idleMs = Date.now() - lastActivityAt
+  const paused = shouldPauseMotion(
+    mode,
+    win.isFocused(),
+    idleMs,
+    Number(config.get('motionIdleMs') || 90 * 1000),
+  )
   if (paused === lastMotionPaused) return
   lastMotionPaused = paused
   win.webContents
@@ -1503,6 +1525,10 @@ async function bootstrap() {
   createTray()
   refreshMenus()
   registerGlobalShortcut()
+  if (motionTimer) clearInterval(motionTimer)
+  motionTimer = setInterval(() => {
+    if (!quitting && !upgrading) syncMotionState()
+  }, 15000)
   try {
     await ensureServer()
   } catch (err) {
@@ -1615,6 +1641,7 @@ if (!gotLock) {
   app.on('before-quit', () => {
     quitting = true
     if (autoCheckTimer) clearInterval(autoCheckTimer)
+    if (motionTimer) clearInterval(motionTimer)
     if (healthTimer) clearInterval(healthTimer)
     if (boundsTimer) clearTimeout(boundsTimer)
     if (config) config.save()

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0 — 2026-10-26
+
+- 动效模式新增 `auto`（默认）：失焦或空闲 90 秒时暂停循环动画，键鼠输入即恢复；
+  新增 `motionIdleMs` 配置与相关测试。
+- 引入 electron-builder，新增 `.deb` / AppImage 打包（`npm run dist:linux`）。
+- 新增 GitHub Actions Release 工作流：推送 `v*` tag 自动测试、构建并上传安装包。
+- 新增 `docs/PACKAGING.md` 与打包说明；版本提升为 1.3.0。
+
 ## 1.2.6 — 2026-10-26
 
 - 新增「界面动效」省电设置（设置窗口/诊断面板可见）：

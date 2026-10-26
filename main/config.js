@@ -36,7 +36,9 @@ const DEFAULT_CONFIG = {
   softwareRendering: false,
   // 界面动效：normal 正常 / blur 窗口失焦时暂停 / always 始终暂停
   // dsh Web UI 的运行态动画在部分 Wayland/GPU 环境下 CPU 开销很大，失焦时暂停可显著省电
-  motionMode: 'blur',
+  motionMode: 'auto',
+  // 自动模式下，窗口聚焦但空闲超过该时长也暂停循环动画
+  motionIdleMs: 90 * 1000,
 }
 
 class Config {
