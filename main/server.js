@@ -87,6 +87,7 @@ class ServerManager {
     this.systemdLog = opts.systemdLog || path.join(os.homedir(), '.config', 'dsh-desktop', 'systemd-server.log')
     this.workspace = opts.workspace || os.homedir()
     this.runAsRoot = Boolean(opts.runAsRoot)
+    this.externalMode = Boolean(opts.externalMode)
   }
 
   get baseUrl() {
@@ -273,6 +274,11 @@ class ServerManager {
 
   async _start() {
     if (this.child) return this.tokenUrl || this.waitReady()
+    if (this.externalMode) {
+      const existing = await this.detectExisting()
+      if (existing && existing.url) return this.attachExisting(existing)
+      throw new Error('外部服务不可用（externalService 模式不启动本地子进程）')
+    }
     if (this.useSystemd) {
       try {
         return await this._startSystemd()

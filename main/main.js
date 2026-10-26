@@ -955,7 +955,37 @@ async function loadApp(url) {
   else if (!tray) win.show()
 }
 
+async function waitForExternalService(timeoutMs = 90000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const existing = await server.detectExisting()
+    if (existing && existing.url) return existing
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+  }
+  return null
+}
+
 async function ensureServer() {
+  if (config.get('externalService')) {
+    let existing = await server.detectExisting()
+    if (!existing || !existing.url) {
+      log('外部服务暂不可用，等待服务就绪（最多 90 秒）')
+      if (win && !win.isDestroyed()) await showReconnectPage('正在连接外部 dsh 服务…')
+      existing = await waitForExternalService(90000)
+    }
+    if (!existing || !existing.url) {
+      dialog.showErrorBox(
+        '外部服务不可用',
+        `配置为外部服务模式，但端口 ${port} 上没有可用的 dsh 服务。\n请先启动 dsh-web-root.service。`,
+      )
+      quitApp()
+      return
+    }
+    const url = server.attachExisting(existing)
+    managed = false
+    await loadApp(url)
+    return
+  }
   const existing = await server.detectExisting()
   if (!existing) {
     if (config.get('externalService')) {
@@ -1024,6 +1054,16 @@ async function restartServer() {
   if (upgrading || recovering) return
   recovering = true
   try {
+    if (config.get('externalService')) {
+      const existing = await waitForExternalService(60000)
+      if (!existing || !existing.url) throw new Error('外部服务 60 秒内不可用')
+      server.attachExisting(existing)
+      managed = false
+      await win.loadURL(existing.url)
+      win.show()
+      notify('已重新连接外部服务', existing.url.replace(/\?token=.*/, ''))
+      return
+    }
     await server.stop({ includeExternal: true })
     const url = await server.start()
     managed = Boolean(server.child)
@@ -1138,6 +1178,12 @@ async function recoverService(reason) {
       // HMR 或其他启动器已经恢复服务时，只刷新凭据和页面。
       server.attachExisting(existing)
       managed = Boolean(server.child)
+    } else if (config.get('externalService')) {
+      // 外部服务（如 root 系统服务）由 systemd 负责重启，这里只等待并重连
+      const recovered = await waitForExternalService(120000)
+      if (!recovered || !recovered.url) throw new Error('外部服务在 120 秒内未恢复')
+      server.attachExisting(recovered)
+      managed = false
     } else {
       await server.stop()
       await server.start()
@@ -2120,6 +2166,7 @@ async function bootstrap() {
   server = new ServerManager({
     useSystemd: Boolean(config.get('useSystemdService')),
     runAsRoot: Boolean(config.get('runServiceAsRoot')),
+    externalMode: Boolean(config.get('externalService')),
     systemdLog: path.join(USER_DATA, 'systemd-server.log'),
     port,
     dshHome: DSH_HOME,
