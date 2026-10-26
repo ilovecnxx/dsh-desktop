@@ -8,6 +8,7 @@ const path = require('node:path')
 const {
   rotateIfNeeded,
   shouldFallbackToSoftwareRendering,
+  resolveCloseAction,
 } = require('../main/runtime-utils')
 const shellUpdater = require('../main/shell-updater')
 
@@ -105,4 +106,14 @@ test('shell updater checks versions and applies atomically with rollback', (t) =
     '1.0.0',
   )
   assert.equal(fs.readFileSync(path.join(installedApp, 'main', 'main.js'), 'utf8'), '// old\n')
+})
+
+test('resolveCloseAction validates values and migrates legacy closeToTray', () => {
+  assert.equal(resolveCloseAction('tray', true), 'tray')
+  assert.equal(resolveCloseAction('quit', true), 'quit')
+  assert.equal(resolveCloseAction('quit-all', true), 'quit-all')
+  // 非法值回退到旧配置
+  assert.equal(resolveCloseAction('bogus', true), 'tray')
+  assert.equal(resolveCloseAction(undefined, false), 'quit')
+  assert.equal(resolveCloseAction(null, undefined), 'tray')
 })

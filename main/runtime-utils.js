@@ -64,10 +64,22 @@ function shouldFallbackToSoftwareRendering(
   return recent.length >= threshold
 }
 
+/**
+ * 解析关闭窗口时的行为，兼容旧配置 closeToTray。
+ * @returns {'tray'|'quit'|'quit-all'}
+ */
+function resolveCloseAction(closeAction, legacyCloseToTray) {
+  if (closeAction === 'tray' || closeAction === 'quit' || closeAction === 'quit-all') {
+    return closeAction
+  }
+  return legacyCloseToTray === false ? 'quit' : 'tray'
+}
+
 module.exports = {
   readTail,
   redact,
   updateDelay,
   rotateIfNeeded,
   shouldFallbackToSoftwareRendering,
+  resolveCloseAction,
 }

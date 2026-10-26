@@ -12,6 +12,8 @@ const DEFAULT_CONFIG = {
   autoCheck: true,
   checkIntervalMs: 6 * 60 * 60 * 1000,
   closeToTray: true,
+  // 关闭窗口行为：tray 收进托盘 / quit 退出客户端保留服务 / quit-all 彻底退出
+  closeAction: 'tray',
   windowBounds: null,
   dismissedVersion: null,
   lastCheckAt: null,

@@ -80,7 +80,8 @@ function settingsHtml() {
       <option value="10000">10 秒</option><option value="15000">15 秒</option>
       <option value="30000">30 秒</option><option value="60000">60 秒</option>
     </select></div>
-  <div class="row"><div><div class="label">关闭窗口时收进托盘</div></div><input type="checkbox" id="closeToTray"></div>
+  <div class="row"><div><div class="label">关闭窗口时</div><div class="hint">收进托盘 / 退出客户端（保留后台服务）/ 彻底退出（停止后台服务）</div></div>
+    <select id="closeAction"><option value="tray">收进托盘</option><option value="quit">退出客户端（保留服务）</option><option value="quit-all">彻底退出（含后台）</option></select></div>
   <div class="row"><div><div class="label">Wayland 兼容模式（X11）</div><div class="hint">优先使用可用的 X11；认证不可用时回退到 Wayland，重启生效</div></div><input type="checkbox" id="useX11"></div>
   <div class="row"><div><div class="label">软件渲染</div><div class="hint">GPU 进程反复崩溃时启用，重启生效</div></div><input type="checkbox" id="softwareRendering"></div>
   <div class="row"><div><div class="label">开机自启</div><div class="hint">登录后自动启动客户端</div></div><input type="checkbox" id="autostart"></div>
@@ -107,7 +108,7 @@ async function refresh() {
   $('autoCheck').checked = !!state.config.autoCheck
   $('shellAutoCheck').checked = !!state.config.shellAutoCheck
   $('autoRestartService').checked = !!state.config.autoRestartService
-  $('closeToTray').checked = !!state.config.closeToTray
+  $('closeAction').value = state.config.closeAction || 'tray'
   $('useX11').checked = !!state.config.useX11
   $('softwareRendering').checked = !!state.config.softwareRendering
   $('globalShortcutEnabled').checked = !!state.config.globalShortcutEnabled
@@ -125,7 +126,7 @@ $('save').addEventListener('click', async () => {
       autoCheck: $('autoCheck').checked,
       shellAutoCheck: $('shellAutoCheck').checked,
       autoRestartService: $('autoRestartService').checked,
-      closeToTray: $('closeToTray').checked,
+      closeAction: $('closeAction').value,
       useX11: $('useX11').checked,
       softwareRendering: $('softwareRendering').checked,
       globalShortcutEnabled: $('globalShortcutEnabled').checked,

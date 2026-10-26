@@ -21,6 +21,7 @@ const {
   updateDelay,
   rotateIfNeeded,
   shouldFallbackToSoftwareRendering,
+  resolveCloseAction,
 } = require('./runtime-utils')
 const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
@@ -243,16 +244,28 @@ function createWindow() {
   win.setMenuBarVisibility(false)
 
   win.on('close', (event) => {
-    if (!quitting && tray && config.get('closeToTray')) {
+    saveWindowBounds()
+    if (quitting) return
+    const action = resolveCloseAction(config.get('closeAction'), config.get('closeToTray'))
+    if (action === 'tray') {
       event.preventDefault()
-      win.hide()
-      if (!trayHintShown) {
-        trayHintShown = true
-        notify(APP_NAME, '窗口已隐藏到系统托盘，可从托盘图标重新打开。')
+      if (tray && !tray.isDestroyed()) {
+        win.hide()
+        if (!trayHintShown) {
+          trayHintShown = true
+          notify(APP_NAME, '窗口已隐藏到系统托盘，可从托盘图标重新打开。')
+        }
+      } else {
+        // 托盘不可用时最小化而不是隐藏，避免窗口"消失且无法找回"
+        win.minimize()
+        notify(APP_NAME, '系统托盘不可用，窗口已最小化。')
       }
       return
     }
-    saveWindowBounds()
+    if (action === 'quit-all') {
+      event.preventDefault()
+      quitApp({ stopExternal: true })
+    }
   })
   win.on('hide', () => saveWindowBounds())
   win.on('minimize', () => saveWindowBounds())
@@ -882,6 +895,7 @@ function settingsSnapshot() {
       shellAutoCheck: Boolean(config.get('shellAutoCheck')),
       autoRestartService: Boolean(config.get('autoRestartService')),
       closeToTray: Boolean(config.get('closeToTray')),
+      closeAction: resolveCloseAction(config.get('closeAction'), config.get('closeToTray')),
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
       useX11: config.get('useX11') !== false,
@@ -903,7 +917,9 @@ function applySettingsPatch(patch) {
   config.set('autoCheck', Boolean(merged.autoCheck))
   config.set('shellAutoCheck', Boolean(merged.shellAutoCheck))
   config.set('autoRestartService', Boolean(merged.autoRestartService))
-  config.set('closeToTray', Boolean(merged.closeToTray))
+  const closeAction = resolveCloseAction(merged.closeAction, merged.closeToTray)
+  config.set('closeAction', closeAction)
+  config.set('closeToTray', closeAction === 'tray')
   config.set('globalShortcutEnabled', Boolean(merged.globalShortcutEnabled))
   const interval = Math.max(5000, Number(merged.healthIntervalMs) || 60000)
   config.set('healthIntervalMs', interval)
@@ -1160,9 +1176,13 @@ function createTray() {
   try {
     const image = nativeImage.createFromPath(iconPath('icon-32.png'))
     tray = new Tray(image)
-    tray.setToolTip(`${APP_NAME} — v${installedVersionSafe()}`)
+    tray.setToolTip(`${APP_NAME} — ${serviceStatusText()} · 客户端 v${app.getVersion()}`)
+    // 创建后立即绑定菜单：AppIndicator 下左键/右键都依赖 context menu，
+    // 不能等后续 refreshMenus() 才绑定，否则点击顶栏会没有反应。
+    tray.setContextMenu(buildTrayMenu(menuContext()))
     tray.on('click', () => showWindow())
     tray.on('double-click', () => showWindow())
+    log('系统托盘已创建并绑定菜单')
   } catch (err) {
     log(`创建托盘失败（不影响使用）: ${err.message}`)
   }
@@ -1295,8 +1315,8 @@ async function bootstrap() {
     '<div>正在连接 DeepSeek Harness…<p style="font-size:12px;color:#9a9ca6">首次启动需要加载服务和插件</p></div></body></html>'))
   if (!AUTOSTART) win.show()
   log(`启动窗口就绪 ${Math.round(performance.now() - bootStartedAt)}ms`)
-  refreshMenus()
   createTray()
+  refreshMenus()
   registerGlobalShortcut()
   try {
     await ensureServer()
@@ -1406,7 +1426,11 @@ if (!gotLock) {
     }
   })
   app.on('window-all-closed', () => {
-    if (!config || !config.get('closeToTray')) quitApp()
+    if (!config) return
+    const action = resolveCloseAction(config.get('closeAction'), config.get('closeToTray'))
+    if (action === 'quit' || action === 'quit-all') {
+      quitApp({ stopExternal: action === 'quit-all' })
+    }
   })
   app.on('activate', () => showWindow())
   process.on('uncaughtException', (err) => {

@@ -27,6 +27,7 @@ Windows / macOS 客户端的体验：原生窗口、系统托盘、应用菜单�
 - **GPU 崩溃兼容**：GPU 进程 10 分钟内反复崩溃时提示切换「软件渲染」，重启后生效
 - **日志轮转**：`main.log` / `server.log` 超过 2 MiB 自动轮转为 `.1`，避免长期运行无限增长
 - 应用菜单/托盘/设置提供「彻底退出（含网页服务）」；`Ctrl+Q` 只退出客户端、保留服务
+- 关闭窗口行为可选：收进托盘 / 退出客户端（保留服务）/ 彻底退出；托盘菜单创建时即绑定
 - **设置中心**（`Ctrl+,`）：更新通道、自动更新、自动重启、托盘、开机自启、全局快捷键、健康检查间隔
 - **诊断面板**：版本/服务状态/最近日志，一键复制诊断信息或重启服务
 - **全局快捷键** `Ctrl+Alt+Space`：显示/隐藏窗口（可关闭）。Wayland 下默认以 XWayland 运行以支持全局快捷键，可在设置里退回原生 Wayland
@@ -181,6 +182,7 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 
 ## 版本与优化记录
 
+- 1.2.4：修复托盘菜单绑定（顶栏点击无反应）、关闭窗口行为可选；详见 [OPTIMIZATION-1.2.4.md](OPTIMIZATION-1.2.4.md)
 - 1.2.3：GPU 崩溃软件渲染回退、日志轮转、新增 3 项测试；详见 [OPTIMIZATION-1.2.3.md](OPTIMIZATION-1.2.3.md)
 - 1.2.2：彻底退出（含网页服务）、共享 `~/.dsh/web.lock`、原子安装；详见 [OPTIMIZATION-1.2.2.md](OPTIMIZATION-1.2.2.md)
 - 1.2.1：启动与恢复优化（复用服务、快速失败、防重入、原子配置、有界日志）；详见 [OPTIMIZATION-1.2.1.md](OPTIMIZATION-1.2.1.md)
