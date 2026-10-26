@@ -71,6 +71,7 @@ function buildApplicationMenu(ctx) {
         { label: '在浏览器中打开', click: () => ctx.openInBrowser() },
         { type: 'separator' },
         { label: '服务日志', click: () => ctx.openServerLog() },
+        { label: '打开下载目录', click: () => ctx.openDownloads() },
       ],
     },
     {

@@ -14,6 +14,7 @@ const {
   shouldPauseMotion,
   sessionNotifyDecision,
   normalizeRegistry,
+  boundsIntersectAny,
 } = require('../main/runtime-utils')
 const shellUpdater = require('../main/shell-updater')
 
@@ -182,4 +183,14 @@ test('normalizeRegistry accepts http(s) and normalizes trailing slash', () => {
   assert.equal(normalizeRegistry('ftp://example.com'), 'https://registry.npmjs.org/')
   assert.equal(normalizeRegistry('not a url'), 'https://registry.npmjs.org/')
   assert.equal(normalizeRegistry(undefined), 'https://registry.npmjs.org/')
+})
+
+test('boundsIntersectAny validates saved window against displays', () => {
+  const display = { x: 0, y: 0, width: 1920, height: 1080 }
+  assert.equal(boundsIntersectAny({ x: 100, y: 100, width: 1280, height: 800 }, [display]), true)
+  assert.equal(boundsIntersectAny({ x: 5000, y: 5000, width: 800, height: 600 }, [display]), false)
+  assert.equal(boundsIntersectAny(null, [display]), false)
+  assert.equal(boundsIntersectAny({ width: 100, height: 100 }, []), false)
+  // 缺少 x/y 时按显示器原点计算
+  assert.equal(boundsIntersectAny({ width: 800, height: 600 }, [display]), true)
 })

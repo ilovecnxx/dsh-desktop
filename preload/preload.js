@@ -132,3 +132,79 @@ window.addEventListener('DOMContentLoaded', () => {
     // 保留当前状态，等待主进程重新推送
   }
 })
+
+// ---- 文件拖拽上传增强（显示提示层，避免拖入文件时页面跳转）----
+const DROP_OVERLAY_ID = 'dsh-desktop-drop-overlay'
+let dragDepth = 0
+
+function hasFiles(event) {
+  const types = event.dataTransfer && event.dataTransfer.types
+  return !!types && Array.prototype.includes.call(types, 'Files')
+}
+
+function showDropOverlay() {
+  if (document.getElementById(DROP_OVERLAY_ID) || !document.documentElement) return
+  const host = document.createElement('div')
+  host.id = DROP_OVERLAY_ID
+  const shadow = host.attachShadow({ mode: 'closed' })
+  shadow.innerHTML = `
+    <style>
+      :host { all: initial; }
+      .overlay {
+        position: fixed; inset: 0; z-index: 2147483646;
+        background: rgba(10, 11, 14, 0.72); display: grid; place-items: center;
+        font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; color: #e8e8ea;
+        border: 2px dashed #4f6ef7; pointer-events: none;
+      }
+      .box { text-align: center; }
+      .title { font-weight: 600; font-size: 17px; }
+      .hint { color: #9a9ca6; font-size: 12px; margin-top: 4px; }
+    </style>
+    <div class="overlay"><div class="box">
+      <div class="title">松开鼠标上传文件</div>
+      <div class="hint">文件会作为附件发送到当前会话</div>
+    </div></div>`
+  document.documentElement.appendChild(host)
+}
+
+function hideDropOverlay() {
+  document.getElementById(DROP_OVERLAY_ID)?.remove()
+}
+
+window.addEventListener(
+  'dragenter',
+  (event) => {
+    if (!hasFiles(event)) return
+    dragDepth += 1
+    showDropOverlay()
+  },
+  true,
+)
+window.addEventListener(
+  'dragleave',
+  (event) => {
+    if (!hasFiles(event)) return
+    dragDepth = Math.max(0, dragDepth - 1)
+    if (dragDepth === 0) hideDropOverlay()
+  },
+  true,
+)
+window.addEventListener(
+  'dragover',
+  (event) => {
+    if (!hasFiles(event)) return
+    // 阻止 Electron 默认打开拖入的文件；页面自己的 drop 处理器仍会收到事件
+    event.preventDefault()
+  },
+  true,
+)
+window.addEventListener(
+  'drop',
+  (event) => {
+    if (!hasFiles(event)) return
+    event.preventDefault()
+    dragDepth = 0
+    hideDropOverlay()
+  },
+  true,
+)

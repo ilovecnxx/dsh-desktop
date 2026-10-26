@@ -28,6 +28,7 @@ const {
   shouldPauseMotion,
   sessionNotifyDecision,
   normalizeRegistry,
+  boundsIntersectAny,
 } = require('./runtime-utils')
 const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
@@ -266,18 +267,8 @@ async function choosePort(preferred) {
 function sanitizeWindowBounds(saved) {
   if (!saved || typeof saved.width !== 'number' || typeof saved.height !== 'number') return {}
   try {
-    const displays = screen.getAllDisplays()
-    const visible = displays.some(({ workArea }) => {
-      const x = Number.isFinite(saved.x) ? saved.x : workArea.x
-      const y = Number.isFinite(saved.y) ? saved.y : workArea.y
-      return (
-        x < workArea.x + workArea.width &&
-        x + saved.width > workArea.x &&
-        y < workArea.y + workArea.height &&
-        y + saved.height > workArea.y
-      )
-    })
-    return visible ? saved : {}
+    const workAreas = screen.getAllDisplays().map((display) => display.workArea)
+    return boundsIntersectAny(saved, workAreas) ? saved : {}
   } catch {
     return saved
   }
@@ -1545,6 +1536,7 @@ function menuContext() {
     toggleAutostart: () => toggleAutostart(),
     getServiceStatus: () => serviceStatusText(),
     openSettings: () => openSettingsWindow(),
+    openDownloads: () => shell.openPath(app.getPath('downloads')),
     newWindow: () => createAuxWindow(),
     getRecentSessions: () => recentSessions,
     openSession: (item) => openRecentSession(item),
@@ -1842,6 +1834,18 @@ async function bootstrap() {
   createTray()
   refreshMenus()
   registerGlobalShortcut()
+  try {
+    win.webContents.session.on('will-download', (event, item) => {
+      const target = path.join(app.getPath('downloads'), item.getFilename())
+      item.setSavePath(target)
+      item.once('done', (_e, state) => {
+        log(`下载${state === 'completed' ? '完成' : '结束'}: ${target} (${state})`)
+        if (state === 'completed') notify('下载完成', item.getFilename())
+      })
+    })
+  } catch (err) {
+    log(`监听下载失败: ${err.message}`)
+  }
   if (motionTimer) clearInterval(motionTimer)
   motionTimer = setInterval(() => {
     if (!quitting && !upgrading) syncMotionState()

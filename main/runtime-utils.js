@@ -147,6 +147,26 @@ function normalizeRegistry(value) {
   }
 }
 
+/**
+ * 判断保存的窗口区域是否与任一显示器工作区相交。
+ * @param {{x?:number,y?:number,width?:number,height?:number}} saved
+ * @param {Array<{x:number,y:number,width:number,height:number}>} workAreas
+ */
+function boundsIntersectAny(saved, workAreas) {
+  if (!saved || typeof saved.width !== 'number' || typeof saved.height !== 'number') return false
+  if (!Array.isArray(workAreas) || workAreas.length === 0) return false
+  return workAreas.some((area) => {
+    const x = Number.isFinite(saved.x) ? saved.x : area.x
+    const y = Number.isFinite(saved.y) ? saved.y : area.y
+    return (
+      x < area.x + area.width &&
+      x + saved.width > area.x &&
+      y < area.y + area.height &&
+      y + saved.height > area.y
+    )
+  })
+}
+
 module.exports = {
   readTail,
   redact,
@@ -159,4 +179,5 @@ module.exports = {
   shouldPauseMotion,
   sessionNotifyDecision,
   normalizeRegistry,
+  boundsIntersectAny,
 }
