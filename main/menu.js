@@ -20,12 +20,23 @@ function updateLabel(ctx) {
   return pending ? `检查更新…（发现 v${pending.latest}）` : '检查更新…'
 }
 
+function recentSessionSubmenu(ctx) {
+  const list = (ctx.getRecentSessions && ctx.getRecentSessions()) || []
+  if (!list.length) return [{ label: '（暂无会话）', enabled: false }]
+  return list.map((item) => ({
+    label: item.title,
+    click: () => ctx.openSession(item),
+  }))
+}
+
 function buildApplicationMenu(ctx) {
   const template = [
     {
       label: 'DeepSeek Harness',
       submenu: [
         { label: '关于 DeepSeek Harness', click: () => ctx.showAbout() },
+        { label: '新建窗口', accelerator: 'CmdOrCtrl+Shift+N', click: () => ctx.newWindow() },
+        { label: '最近会话', submenu: recentSessionSubmenu(ctx) },
         { type: 'separator' },
         { label: updateLabel(ctx), accelerator: 'CmdOrCtrl+U', click: () => ctx.checkUpdate() },
         { label: '检查客户端更新…', click: () => ctx.checkShellUpdate() },
@@ -99,6 +110,8 @@ function buildApplicationMenu(ctx) {
 function buildTrayMenu(ctx) {
   const template = [
     { label: '打开主窗口', click: () => ctx.showWindow() },
+    { label: '新建窗口', click: () => ctx.newWindow() },
+    { label: '最近会话', submenu: recentSessionSubmenu(ctx) },
     { label: `状态：${ctx.getServiceStatus()}`, enabled: false },
     { type: 'separator' },
     { label: updateLabel(ctx), click: () => ctx.checkUpdate() },

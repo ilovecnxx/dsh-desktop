@@ -32,6 +32,7 @@ const {
 const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
 const utility = require('./utility')
+const sessionsStore = require('./sessions')
 const { buildApplicationMenu, buildTrayMenu } = require('./menu')
 
 const APP_NAME = 'DeepSeek Harness'
@@ -111,7 +112,12 @@ let lastMotionPaused = null
 let lastActivityAt = Date.now()
 let motionTimer = null
 let sessionWatchTimer = null
+const auxWindows = new Set()
+const auxMotionState = new WeakMap()
 let sessionPrev = { running: false, dialogs: 0 }
+let recentSessions = []
+let recentSessionsTimer = null
+let recentSessionsLoading = false
 const gpuCrashTimes = []
 const serviceExitTimes = []
 let gpuFallbackInProgress = false
@@ -344,6 +350,10 @@ function createWindow() {
   win.on('resized', () => scheduleSaveWindowBounds())
 
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isLocalAppUrl(url)) {
+      createAuxWindow(url)
+      return { action: 'deny' }
+    }
     if (/^https?:/i.test(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
@@ -440,6 +450,94 @@ const RESUME_MOTION_JS = `(() => {
   state.paused.clear();
   return resumed;
 })()`
+
+function isLocalAppUrl(url) {
+  try {
+    const target = new URL(url)
+    return (
+      (target.hostname === '127.0.0.1' || target.hostname === 'localhost') &&
+      String(target.port || '') === String(port)
+    )
+  } catch {
+    return false
+  }
+}
+
+function applyAuxMotionState(target) {
+  if (!target || target.isDestroyed()) return
+  const mode = resolveMotionMode(config.get('motionMode'))
+  const paused = shouldPauseMotion(
+    mode,
+    target.isFocused(),
+    Date.now() - lastActivityAt,
+    Number(config.get('motionIdleMs') || 90 * 1000),
+  )
+  if (auxMotionState.get(target) === paused) return
+  auxMotionState.set(target, paused)
+  target.webContents
+    .executeJavaScript(paused ? PAUSE_MOTION_JS : RESUME_MOTION_JS, true)
+    .catch(() => {})
+}
+
+/** 新建一个独立窗口，加载同一 dsh web 服务（多会话并行查看）。 */
+function createAuxWindow(targetUrl) {
+  const url = targetUrl || (server && server.tokenUrl)
+  if (!url) return null
+  const aux = new BrowserWindow({
+    width: 1280,
+    height: 880,
+    show: false,
+    backgroundColor: '#151517',
+    title: APP_NAME,
+    icon: iconPath('icon-256.png'),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(PROJECT_DIR, 'preload', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  })
+  auxWindows.add(aux)
+  aux.on('closed', () => {
+    auxWindows.delete(aux)
+    auxMotionState.delete(aux)
+  })
+  aux.webContents.setWindowOpenHandler(({ url: next }) => {
+    if (isLocalAppUrl(next)) {
+      createAuxWindow(next)
+      return { action: 'deny' }
+    }
+    if (/^https?:/i.test(next)) shell.openExternal(next)
+    return { action: 'deny' }
+  })
+  aux.webContents.on('will-navigate', (event, next) => {
+    if (isLocalAppUrl(next)) return
+    event.preventDefault()
+    if (/^https?:/i.test(next)) shell.openExternal(next)
+  })
+  aux.on('focus', () => {
+    markActivity()
+    applyAuxMotionState(aux)
+  })
+  aux.on('blur', () => {
+    markActivity()
+    applyAuxMotionState(aux)
+  })
+  aux.webContents.on('before-input-event', () => {
+    markActivity()
+    applyAuxMotionState(aux)
+  })
+  aux.webContents.on('did-finish-load', () => {
+    auxMotionState.delete(aux)
+    applyAuxMotionState(aux)
+  })
+  aux.once('ready-to-show', () => aux.show())
+  aux.loadURL(url).catch((err) => log(`新窗口加载失败: ${err.message}`))
+  log(`新建窗口（当前共 ${auxWindows.size + 1} 个窗口）`)
+  return aux
+}
 
 function markActivity() {
   lastActivityAt = Date.now()
@@ -1447,6 +1545,9 @@ function menuContext() {
     toggleAutostart: () => toggleAutostart(),
     getServiceStatus: () => serviceStatusText(),
     openSettings: () => openSettingsWindow(),
+    newWindow: () => createAuxWindow(),
+    getRecentSessions: () => recentSessions,
+    openSession: (item) => openRecentSession(item),
     restartApp: () => {
       server.stop().then(() => {
         config.save()
@@ -1598,6 +1699,51 @@ function startAutoCheck() {
   }, delay)
 }
 
+async function refreshRecentSessions() {
+  if (recentSessionsLoading) return
+  recentSessionsLoading = true
+  try {
+    recentSessions = await sessionsStore.listRecentSessions(path.join(DSH_HOME, 'sessions'), 8)
+  } catch (err) {
+    log(`读取最近会话失败: ${err.message}`)
+    recentSessions = []
+  } finally {
+    recentSessionsLoading = false
+    refreshMenus()
+  }
+}
+
+/** 托盘/菜单点击最近会话：先聚焦窗口，再在页面里点击对应会话项（dsh UI 无 URL 路由，best effort）。 */
+function openRecentSession(item) {
+  showWindow()
+  if (!item || !win || win.isDestroyed()) return
+  const raw = String(item.rawTitle || item.title || '')
+  setTimeout(() => {
+    win.webContents
+      .executeJavaScript(
+        `(() => {
+          const want = ${JSON.stringify(raw)};
+          if (!want) return 'no-title';
+          const nodes = [...document.querySelectorAll('button,a,[role="button"],li,div,span')];
+          const exact = nodes.find((el) => (el.textContent || '').trim() === want && el.offsetParent !== null);
+          if (exact) { exact.click(); return 'clicked'; }
+          const prefix = want.slice(0, 10);
+          if (prefix.length > 2) {
+            const loose = nodes.find((el) => {
+              const text = (el.textContent || '').trim();
+              return text.startsWith(prefix) && text.length < 200 && el.offsetParent !== null;
+            });
+            if (loose) { loose.click(); return 'clicked-prefix'; }
+          }
+          return 'not-found';
+        })()`,
+        true,
+      )
+      .then((result) => log(`打开最近会话 ${item.id}: ${result}`))
+      .catch((err) => log(`打开最近会话失败: ${err.message}`))
+  }, 600)
+}
+
 const SESSION_STATE_JS = `(() => {
   let running = false
   const selector = '[class*="spinner"],[class*="sweep"],[class*="highlight"],[class*="shimmer"],[class*="state-dot"]'
@@ -1717,6 +1863,9 @@ async function bootstrap() {
   }
   log(`客户端启动完成 dsh=${installedVersionSafe()} electron=${process.versions.electron} elapsedMs=${Math.round(performance.now() - bootStartedAt)}`)
   startSessionWatcher()
+  refreshRecentSessions()
+  if (recentSessionsTimer) clearInterval(recentSessionsTimer)
+  recentSessionsTimer = setInterval(() => refreshRecentSessions(), 5 * 60 * 1000)
 
   if (config.get('shellAutoCheck')) {
     setTimeout(() => {
@@ -1757,6 +1906,13 @@ async function bootstrap() {
       log('[test] 隐藏窗口（用于空闲资源采样）')
       if (win && !win.isDestroyed()) win.hide()
     }, TEST_HIDE_MS)
+  }
+
+  if (process.env.DSH_DESKTOP_TEST_OPEN_AUX === '1') {
+    setTimeout(() => {
+      log('[test] 打开辅助窗口')
+      createAuxWindow()
+    }, Number(process.env.DSH_DESKTOP_TEST_OPEN_AUX_MS || 3000))
   }
 
   if (TEST_GPU_CRASH_MS > 0) {
@@ -1815,6 +1971,7 @@ if (!gotLock) {
     if (autoCheckTimer) clearInterval(autoCheckTimer)
     if (motionTimer) clearInterval(motionTimer)
     if (sessionWatchTimer) clearInterval(sessionWatchTimer)
+    if (recentSessionsTimer) clearInterval(recentSessionsTimer)
     if (healthTimer) clearInterval(healthTimer)
     if (boundsTimer) clearTimeout(boundsTimer)
     if (config) config.save()
