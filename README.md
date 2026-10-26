@@ -29,7 +29,12 @@ Windows / macOS 客户端的体验：原生窗口、系统托盘、应用菜单�
   可设正常/仅失焦/始终暂停；实测运行态动画 CPU 66% → 8.2%
 - **Linux 安装包**：支持 `npm run dist:linux` 生成 `.deb` / AppImage，Release CI 自动发布
 - **系统通知**：窗口未聚焦时，会话完成/等待确认会弹系统通知，点击回到客户端（可开关）
-- **更新与诊断**：可配置检查间隔与 npm 镜像源；诊断面板支持导出诊断包、清理缓存
+- **更新与诊断**：可配置检查间隔与 npm 镜像源；诊断面板支持导出诊断包、清理缓存、
+  备份会话、导出 Markdown、回滚客户端/dsh 运行时
+- **多窗口**：`Ctrl+Shift+N` 新建窗口，每个窗口独立会话视图
+- **最近会话**：应用/托盘菜单直接打开最近的会话
+- **附件与下载**：拖拽上传提示、下载统一目录与完成通知
+- **桌面集成**：`dsh://` 协议（`dsh://new` 新建窗口），安装时注册处理程序
 - **日志轮转**：`main.log` / `server.log` 超过 2 MiB 自动轮转为 `.1`，避免长期运行无限增长
 - 应用菜单/托盘/设置提供「彻底退出（含网页服务）」；`Ctrl+Q` 只退出客户端、保留服务
 - 关闭窗口行为可选：收进托盘 / 退出客户端（保留服务）/ 彻底退出；托盘菜单创建时即绑定
@@ -187,6 +192,7 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 
 ## 版本与优化记录
 
+- 1.4.0：多窗口/最近会话、附件与下载、会话备份/导出、dsh:// 协议、arm64 构建；详见 [OPTIMIZATION-1.4.0.md](OPTIMIZATION-1.4.0.md)
 - 1.3.2：更新体验（频率/镜像源/更新说明）、诊断包导出、清理缓存、多显示器窗口校正；详见 [OPTIMIZATION-1.3.2.md](OPTIMIZATION-1.3.2.md)
 - 1.3.1：系统通知（会话完成/等待确认）；详见 [OPTIMIZATION-1.3.1.md](OPTIMIZATION-1.3.1.md)
 - 1.3.0：自动节能动效（空闲暂停）、`.deb`/AppImage 打包与 Release CI；详见 [OPTIMIZATION-1.3.0.md](OPTIMIZATION-1.3.0.md)
@@ -202,7 +208,8 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 ## 打包分发
 
 ```bash
-npm run dist:linux     # 生成 dist/*.deb 与 dist/*.AppImage
+npm run dist:linux                 # 生成 x64 dist/*.deb 与 dist/*.AppImage
+npx electron-builder --linux deb --arm64   # 生成 arm64 .deb
 ```
 
 详细步骤、安装方式与发布流程见 [docs/PACKAGING.md](docs/PACKAGING.md)。
