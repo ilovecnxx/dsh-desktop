@@ -35,6 +35,7 @@ Windows / macOS 客户端的体验：原生窗口、系统托盘、应用菜单�
 - **最近会话**：应用/托盘菜单直接打开最近的会话
 - **附件与下载**：拖拽上传提示、下载统一目录与完成通知
 - **桌面集成**：`dsh://` 协议（`dsh://new` 新建窗口），安装时注册处理程序
+- **服务解耦**：可把后台服务切换为 systemd 用户服务，客户端重启/崩溃不中断会话
 - **日志轮转**：`main.log` / `server.log` 超过 2 MiB 自动轮转为 `.1`，避免长期运行无限增长
 - 应用菜单/托盘/设置提供「彻底退出（含网页服务）」；`Ctrl+Q` 只退出客户端、保留服务
 - 关闭窗口行为可选：收进托盘 / 退出客户端（保留服务）/ 彻底退出；托盘菜单创建时即绑定
@@ -192,6 +193,7 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 
 ## 版本与优化记录
 
+- 1.4.1：systemd 用户服务托管、桌面集成结论；详见 [OPTIMIZATION-1.4.1.md](OPTIMIZATION-1.4.1.md)
 - 1.4.0：多窗口/最近会话、附件与下载、会话备份/导出、dsh:// 协议、arm64 构建；详见 [OPTIMIZATION-1.4.0.md](OPTIMIZATION-1.4.0.md)
 - 1.3.2：更新体验（频率/镜像源/更新说明）、诊断包导出、清理缓存、多显示器窗口校正；详见 [OPTIMIZATION-1.3.2.md](OPTIMIZATION-1.3.2.md)
 - 1.3.1：系统通知（会话完成/等待确认）；详见 [OPTIMIZATION-1.3.1.md](OPTIMIZATION-1.3.1.md)

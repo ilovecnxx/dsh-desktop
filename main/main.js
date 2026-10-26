@@ -1264,6 +1264,7 @@ function settingsSnapshot() {
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
       useX11: config.get('useX11') !== false,
       softwareRendering: Boolean(config.get('softwareRendering')),
+      useSystemdService: Boolean(config.get('useSystemdService')),
     },
     autostart: autostartEnabled(),
     globalShortcut: config.get('globalShortcut'),
@@ -1406,6 +1407,54 @@ async function exportLatestSessionMarkdown() {
   return { message: `已导出会话 Markdown：${picked.filePath}` }
 }
 
+async function enableSystemdService() {
+  const systemd = require('./systemd-service')
+  if (!systemd.available()) return { message: 'systemd 用户服务不可用' }
+  const answer = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: '启用 systemd 托管',
+    message: '把后台服务交给 systemd 用户服务？',
+    detail: '启用后会短暂重启一次后台服务；之后客户端重启/崩溃都不再中断会话。',
+    buttons: ['启用并重启服务', '取消'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  if (answer.response !== 0) return { message: '已取消' }
+  config.set('useSystemdService', true)
+  server.useSystemd = true
+  server.systemdLog = path.join(USER_DATA, 'systemd-server.log')
+  await server.stop({ includeExternal: true })
+  const url = await server.start()
+  managed = false
+  await win.loadURL(url)
+  refreshMenus()
+  log('已启用 systemd 服务托管')
+  return { message: '已启用 systemd 托管（客户端重启不再中断服务）' }
+}
+
+async function disableSystemdService() {
+  const answer = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: '取消 systemd 托管',
+    message: '改回由客户端管理后台服务？',
+    detail: '之后客户端重启会中断后台服务（会话记录保留）。',
+    buttons: ['改回客户端托管', '取消'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  if (answer.response !== 0) return { message: '已取消' }
+  config.set('useSystemdService', false)
+  server.useSystemd = false
+  await server.stop({ includeExternal: true })
+  const url = await server.start()
+  managed = Boolean(server.child)
+  await win.loadURL(url)
+  refreshMenus()
+  return { message: '已改回客户端托管' }
+}
+
 async function rollbackShellFlow() {
   const backup = path.join(shellUpdater.appRoot(), 'resources', 'app.backup')
   if (!fs.existsSync(backup)) return { message: '没有可回滚的客户端备份' }
@@ -1509,6 +1558,10 @@ async function handleUtilityAction(payload) {
       return rollbackShellFlow()
     case 'rollback-dsh':
       return rollbackDshFlow()
+    case 'systemd-enable':
+      return enableSystemdService()
+    case 'systemd-disable':
+      return disableSystemdService()
     default:
       throw new Error(`未知操作: ${action}`)
   }
@@ -1931,6 +1984,8 @@ async function bootstrap() {
   }
   config.set('port', port)
   server = new ServerManager({
+    useSystemd: Boolean(config.get('useSystemdService')),
+    systemdLog: path.join(USER_DATA, 'systemd-server.log'),
     port,
     dshHome: DSH_HOME,
     logFile: SERVER_LOG,

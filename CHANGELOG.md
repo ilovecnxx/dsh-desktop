@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.1 — 2026-10-26
+
+- 后台服务可切换为 **systemd 用户服务**（`dsh-web-session.service`）托管：
+  客户端重启/崩溃不再中断会话；token 从 systemd 日志自动发现；systemd 不可用时
+  自动回退客户端托管。
+- 诊断面板新增「启用 systemd 托管」「返回客户端托管」，并显示当前服务托管方式。
+- 桌面集成结论（`docs/desktop-integration.md`）：Nautilus 51 已无脚本菜单且未安装
+  nautilus-python，文件管理器右键暂不可用；拖文件夹受 Electron 沙箱取路径与
+  dsh web 无 workspace 参数限制；剪贴板图片粘贴由 Web 前端原生处理，桌面端无需改。
+- 测试总数 24。
+
 ## 1.4.0 — 2026-10-26
 
 - 多窗口/多会话：新增「新建窗口」（`Ctrl+Shift+N`），同源链接自动在新窗口打开，

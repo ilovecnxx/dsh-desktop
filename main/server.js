@@ -83,6 +83,9 @@ class ServerManager {
     this.startupError = null
     this.startupTimeoutMs = opts.startupTimeoutMs || 30000
     this.onExit = typeof opts.onExit === 'function' ? opts.onExit : null
+    this.useSystemd = Boolean(opts.useSystemd)
+    this.systemdLog = opts.systemdLog || path.join(os.homedir(), '.config', 'dsh-desktop', 'systemd-server.log')
+    this.workspace = opts.workspace || os.homedir()
   }
 
   get baseUrl() {
@@ -127,7 +130,7 @@ class ServerManager {
     const pid = findPortPid(this.port)
     let tokenUrl = null
     // token 可能来自客户端自己的 server.log，也可能来自旧浏览器版的 ~/.dsh/web.log
-    const logCandidates = [this.logFile, path.join(this.dshHome, 'web.log')]
+    const logCandidates = [this.logFile, this.systemdLog, path.join(this.dshHome, 'web.log')]
       .filter(Boolean)
       .map((file) => {
         let mtime = 0
@@ -211,8 +214,52 @@ class ServerManager {
     return this.starting
   }
 
+  async _startSystemd() {
+    const systemd = require('./systemd-service')
+    this.startupError = null
+    this.stopping = false
+    this.tokenUrl = null
+    if (!systemd.available()) throw new Error('systemd 用户服务不可用')
+    systemd.installUnit({
+      dshHome: this.dshHome,
+      port: this.port,
+      workspace: this.workspace,
+      logFile: this.systemdLog,
+    })
+    try {
+      if (fs.existsSync(this.systemdLog) && fs.statSync(this.systemdLog).size > 2 * 1024 * 1024) {
+        fs.truncateSync(this.systemdLog, 0)
+      }
+    } catch {
+      // ignore
+    }
+    this.pushLog(`启动 systemd 服务 ${systemd.UNIT_NAME}`)
+    systemd.start()
+    const deadline = Date.now() + this.startupTimeoutMs
+    while (Date.now() < deadline) {
+      const text = readTail(this.systemdLog, 400)
+      const url = systemd.parseTokenFromLog(text, this.port)
+      if (url && (await validToken(url))) {
+        this.tokenUrl = url
+        this.externalPid = systemd.mainPid()
+        this.pushLog('systemd 服务已就绪（客户端重启不会中断服务）')
+        return url
+      }
+      await sleep(500)
+    }
+    throw new Error(`systemd 服务启动超时。日志：\n${readTail(this.systemdLog, 15)}`)
+  }
+
   async _start() {
     if (this.child) return this.tokenUrl || this.waitReady()
+    if (this.useSystemd) {
+      try {
+        return await this._startSystemd()
+      } catch (err) {
+        this.pushLog(`systemd 启动失败，回退客户端托管: ${err.message}`)
+        this.useSystemd = false
+      }
+    }
     const existing = await this.detectExisting()
     if (existing) return this.attachExisting(existing)
     this.externalPid = null
@@ -288,6 +335,20 @@ class ServerManager {
 
   /** 停止自己拉起的进程，或接管时停止外部进程。 */
   async stop({ includeExternal = false } = {}) {
+    if (this.useSystemd) {
+      this.stopping = true
+      this.tokenUrl = null
+      if (includeExternal) {
+        try {
+          require('./systemd-service').stop()
+          this.pushLog('已停止 systemd 服务')
+        } catch (err) {
+          this.pushLog(`停止 systemd 服务失败: ${err.message}`)
+        }
+        this.externalPid = null
+      }
+      return
+    }
     this.stopping = true
     const child = this.child
     this.child = null
