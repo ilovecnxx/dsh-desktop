@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.4 — 2026-10-26
+
+- 修复 root 模式下原本的项目会话出现在「未分组」：
+  - 新增 `scripts/repair-workspace-groups.js`，按 session 元数据 cwd 把游离会话
+    重新关联到工作区（本次修复 8 个，含 5 个 linux-android 会话）；
+  - `dsh-web-root.service` 与 `dsh-web-session.service` 的 `WorkingDirectory`
+    统一为 `default-workspace`，避免新会话归到错误工作区。
+- 测试 30/30。
+
 ## 1.5.3 — 2026-10-26
 
 - BUG/优化（无新功能）：
