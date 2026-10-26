@@ -17,6 +17,7 @@ const {
   boundsIntersectAny,
   dshUrlAction,
   pastedTextFileName,
+  addRecentWorkspace,
 } = require('../main/runtime-utils')
 const shellUpdater = require('../main/shell-updater')
 
@@ -215,4 +216,11 @@ test('pastedTextFileName builds safe readable name', () => {
   const unsafe = pastedTextFileName('a/b:c*?"<>| d', new Date('2026-10-26T00:00:00Z'))
   assert.ok(!/[\\/:*?"<>|]/.test(unsafe))
   assert.ok(pastedTextFileName('', new Date('2026-10-26T00:00:00Z')).includes('粘贴内容'))
+})
+
+test('addRecentWorkspace dedupes, prepends and caps', () => {
+  assert.deepEqual(addRecentWorkspace(['/a', '/b'], '/c'), ['/c', '/a', '/b'])
+  assert.deepEqual(addRecentWorkspace(['/a', '/b'], '/a'), ['/a', '/b'])
+  assert.deepEqual(addRecentWorkspace(['/a', '/b', '/c'], '/d', 2), ['/d', '/a'])
+  assert.deepEqual(addRecentWorkspace(null, ''), [])
 })

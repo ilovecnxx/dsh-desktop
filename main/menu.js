@@ -29,6 +29,15 @@ function recentSessionSubmenu(ctx) {
   }))
 }
 
+function recentWorkspacesSubmenu(ctx) {
+  const list = (ctx.getRecentWorkspaces && ctx.getRecentWorkspaces()) || []
+  if (!list.length) return [{ label: '（暂无）', enabled: false }]
+  return list.map((folder) => ({
+    label: String(folder).replace(/^\/home\/[^/]+/, '~'),
+    click: () => ctx.openRecentWorkspace(folder),
+  }))
+}
+
 function buildApplicationMenu(ctx) {
   const template = [
     {
@@ -38,7 +47,9 @@ function buildApplicationMenu(ctx) {
         { label: '新建窗口', accelerator: 'CmdOrCtrl+Shift+N', click: () => ctx.newWindow() },
         { label: '最近会话', submenu: recentSessionSubmenu(ctx) },
     { label: '打开文件夹作为工作区…', click: () => ctx.openFolderWorkspace() },
+    { label: '最近工作区', submenu: recentWorkspacesSubmenu(ctx) },
         { label: '打开文件夹作为工作区…', click: () => ctx.openFolderWorkspace() },
+        { label: '最近工作区', submenu: recentWorkspacesSubmenu(ctx) },
         { type: 'separator' },
         { label: updateLabel(ctx), accelerator: 'CmdOrCtrl+U', click: () => ctx.checkUpdate() },
         { label: '检查客户端更新…', click: () => ctx.checkShellUpdate() },

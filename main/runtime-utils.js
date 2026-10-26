@@ -195,6 +195,14 @@ function pastedTextFileName(text, date = new Date()) {
   return `paste-${stamp}-${safe || '粘贴内容'}.txt`
 }
 
+/** 去重并置顶加入最近工作区（最多 limit 条）。 */
+function addRecentWorkspace(list, folder, limit = 8) {
+  const value = String(folder || '').trim()
+  const base = Array.isArray(list) ? list.filter((item) => typeof item === 'string' && item) : []
+  if (!value) return base.slice(0, limit)
+  return [value, ...base.filter((item) => item !== value)].slice(0, limit)
+}
+
 module.exports = {
   readTail,
   redact,
@@ -210,4 +218,5 @@ module.exports = {
   boundsIntersectAny,
   dshUrlAction,
   pastedTextFileName,
+  addRecentWorkspace,
 }

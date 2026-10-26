@@ -32,6 +32,7 @@ const {
   normalizeRegistry,
   boundsIntersectAny,
   pastedTextFileName,
+  addRecentWorkspace,
   dshUrlAction,
 } = require('./runtime-utils')
 const updater = require('./updater')
@@ -558,6 +559,18 @@ function createAuxWindow(targetUrl) {
   return aux
 }
 
+function recentWorkspaces() {
+  const list = config.get('recentWorkspaces')
+  if (!Array.isArray(list)) return []
+  return list.filter((folder) => {
+    try {
+      return fs.statSync(folder).isDirectory()
+    } catch {
+      return false
+    }
+  })
+}
+
 async function openFolderWorkspace(folder) {
   if (!folder) return null
   const service = await workspaceService.startWorkspaceService(folder, { dshHome: DSH_HOME })
@@ -578,6 +591,8 @@ async function openFolderWorkspace(folder) {
       }
     })
     log(`已为文件夹启动工作区服务：${service.folder} (pid=${service.child.pid} port=${service.port})`)
+    config.set('recentWorkspaces', addRecentWorkspace(config.get('recentWorkspaces') || [], service.folder))
+    refreshMenus()
   }
   return service
 }
@@ -1393,6 +1408,7 @@ function settingsSnapshot() {
       runServiceAsRoot: Boolean(config.get('runServiceAsRoot')),
       externalService: Boolean(config.get('externalService')),
       home: process.env.HOME || os.homedir(),
+      workspaceCount: workspaceServices.size,
       port: Number(config.get('port') || 3080),
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
@@ -1961,6 +1977,8 @@ function menuContext() {
     openSettings: () => openSettingsWindow(),
     openDownloads: () => shell.openPath(app.getPath('downloads')),
     openFolderWorkspace: () => openFolderWorkspaceDialog(),
+    getRecentWorkspaces: () => recentWorkspaces(),
+    openRecentWorkspace: (folder) => openFolderWorkspace(folder),
     newWindow: () => createAuxWindow(),
     getRecentSessions: () => recentSessions,
     openSession: (item) => openRecentSession(item),
