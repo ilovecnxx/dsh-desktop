@@ -173,6 +173,14 @@ class ServerManager {
 
   /** 复用已在运行的服务。 */
   attachExisting(existing) {
+    // 外部服务可能属于其他用户（如 root systemd 单元），普通用户读不到 cmdline；
+    // 此时只要 token 已通过校验即可复用。
+    if (existing.url && !isDshCommand(existing.cmdline || '') && !existing.pid) {
+      this.externalPid = null
+      this.tokenUrl = existing.url
+      this.pushLog('复用外部服务（token 已校验，进程属主不可见）')
+      return this.tokenUrl
+    }
     if (!isDshCommand(existing.cmdline) || !existing.url) {
       throw new Error('端口已被占用，但无法确认有效的 dsh 服务及访问凭据')
     }

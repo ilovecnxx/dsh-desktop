@@ -957,8 +957,23 @@ async function loadApp(url) {
 async function ensureServer() {
   const existing = await server.detectExisting()
   if (!existing) {
+    if (config.get('externalService')) {
+      dialog.showErrorBox(
+        '外部服务不可用',
+        `配置为外部服务模式，但端口 ${port} 上没有可用的 dsh 服务。\n请先启动 dsh-web-root.service。`,
+      )
+      quitApp()
+      return
+    }
     const url = await server.start()
     managed = Boolean(server.child)
+    await loadApp(url)
+    return
+  }
+  // 外部服务（如 root systemd 单元）普通用户读不到进程 pid；token 已校验即可复用
+  if (!existing.pid && existing.url) {
+    const url = server.attachExisting(existing)
+    managed = false
     await loadApp(url)
     return
   }
@@ -1265,6 +1280,8 @@ function settingsSnapshot() {
       pasteToFileEnabled: config.get('pasteToFileEnabled') !== false,
       pasteToFileThreshold: Number(config.get('pasteToFileThreshold') || 6000),
       runServiceAsRoot: Boolean(config.get('runServiceAsRoot')),
+      externalService: Boolean(config.get('externalService')),
+      port: Number(config.get('port') || 3080),
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
       useX11: config.get('useX11') !== false,
@@ -2063,7 +2080,11 @@ async function bootstrap() {
   })
   if (!PORT_ENV) {
     try {
+      if (config.get('externalService')) {
+        port = Number(config.get('port') || 3081)
+      } else {
       port = await choosePort(Number(config.get('port') || 3080))
+      }
     } catch (err) {
       log(`选择端口失败: ${err.message}`)
     }

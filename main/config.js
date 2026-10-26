@@ -23,6 +23,8 @@ const DEFAULT_CONFIG = {
   autoRestartService: true,
   // 后台服务交给 systemd 用户服务托管（客户端重启/崩溃不中断会话）
   useSystemdService: false,
+  // 外部服务模式：不自己拉起/切换端口，只连接配置端口上的外部 dsh 服务（如 root systemd 单元）
+  externalService: false,
   // 进程退出立即恢复；无响应连续两次检查失败后再恢复，避免瞬时拥塞误判。
   healthIntervalMs: 60000,
   // 客户端壳自更新
