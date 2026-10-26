@@ -29,6 +29,20 @@ function recentSessionSubmenu(ctx) {
   }))
 }
 
+function serviceModeSubmenu(ctx) {
+  const mode = (ctx.getServiceMode && ctx.getServiceMode()) || { port: 0 }
+  const item = (port, label) => ({
+    label,
+    type: 'radio',
+    checked: mode.port === port,
+    click: () => ctx.switchService(port),
+  })
+  return [
+    item(3080, '开发服务(3080, user)'),
+    item(3081, 'root 测试(3081)'),
+  ]
+}
+
 function recentWorkspacesSubmenu(ctx) {
   const list = (ctx.getRecentWorkspaces && ctx.getRecentWorkspaces()) || []
   if (!list.length) return [{ label: '（暂无）', enabled: false }]
@@ -50,6 +64,7 @@ function buildApplicationMenu(ctx) {
     { label: '最近工作区', submenu: recentWorkspacesSubmenu(ctx) },
         { label: '打开文件夹作为工作区…', click: () => ctx.openFolderWorkspace() },
         { label: '最近工作区', submenu: recentWorkspacesSubmenu(ctx) },
+        { label: '服务模式', submenu: serviceModeSubmenu(ctx) },
         { type: 'separator' },
         { label: updateLabel(ctx), accelerator: 'CmdOrCtrl+U', click: () => ctx.checkUpdate() },
         { label: '检查客户端更新…', click: () => ctx.checkShellUpdate() },
@@ -125,6 +140,7 @@ function buildApplicationMenu(ctx) {
 function buildTrayMenu(ctx) {
   const template = [
     { label: '打开主窗口', click: () => ctx.showWindow() },
+    { label: '服务模式', submenu: serviceModeSubmenu(ctx) },
     { label: '新建窗口', click: () => ctx.newWindow() },
     { label: '最近会话', submenu: recentSessionSubmenu(ctx) },
     { label: `状态：${ctx.getServiceStatus()}`, enabled: false },

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# 免密启停 root 测试服务的受限助手（由 setup-root.sh 安装到 /usr/local/sbin）
+set -euo pipefail
+action="${1:-}"
+case "$action" in
+  start|stop|restart|is-active)
+    exec /usr/bin/systemctl "$action" dsh-web-root.service
+    ;;
+  *)
+    echo "用法: $0 {start|stop|restart|is-active}" >&2
+    exit 2
+    ;;
+esac

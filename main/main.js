@@ -810,6 +810,7 @@ async function openFolderWorkspace(folder) {
     log(`已为文件夹启动工作区服务：${service.folder} (pid=${service.child.pid} port=${service.port})`)
     config.set('recentWorkspaces', addRecentWorkspace(config.get('recentWorkspaces') || [], service.folder))
     refreshMenus()
+  updateTrayTooltip()
   }
   return service
 }
@@ -1969,6 +1970,15 @@ function serviceAction(port, action) {
     return
   }
   if (port === 3081) {
+    const helper = '/usr/local/sbin/dsh-root-service'
+    if (fs.existsSync(helper)) {
+      try {
+        execFileSync('/usr/bin/sudo', ['-n', helper, action], { timeout: 30000 })
+        return
+      } catch (err) {
+        log(`免密 root 服务助手失败，回退 pkexec: ${err.message}`)
+      }
+    }
     execFileSync('pkexec', ['systemctl', action, 'dsh-web-root.service'], { timeout: 120000 })
   }
 }
@@ -2386,6 +2396,18 @@ function menuContext() {
     openSettings: () => openSettingsWindow(),
     openDownloads: () => shell.openPath(app.getPath('downloads')),
     openFolderWorkspace: () => openFolderWorkspaceDialog(),
+    getServiceMode: () => ({
+      port,
+      externalService: Boolean(config.get('externalService')),
+      label:
+        port === 3080
+          ? '开发服务(3080, user)'
+          : port === 3081
+            ? 'root 测试(3081)'
+            : `客户端托管(${port})`,
+    }),
+    switchService: (target) =>
+      switchService(target, target === 3080 ? '开发服务' : 'root 测试'),
     getRecentWorkspaces: () => recentWorkspaces(),
     openRecentWorkspace: (folder) => openFolderWorkspace(folder),
     newWindow: () => createAuxWindow(),
@@ -2415,6 +2437,17 @@ function menuContext() {
     },
     quit: () => quitApp(),
     quitAll: () => quitApp({ stopExternal: true }),
+  }
+}
+
+function updateTrayTooltip() {
+  if (!tray) return
+  try {
+    const mode =
+      port === 3080 ? '开发服务 3080' : port === 3081 ? 'root 测试 3081' : `端口 ${port}`
+    tray.setToolTip(`DeepSeek Harness · ${mode}`)
+  } catch {
+    // ignore
   }
 }
 
@@ -2760,6 +2793,7 @@ async function bootstrap() {
   log(`启动窗口就绪 ${Math.round(performance.now() - bootStartedAt)}ms`)
   createTray()
   refreshMenus()
+  updateTrayTooltip()
   registerGlobalShortcut()
   try {
     win.webContents.session.on('will-download', (event, item) => {

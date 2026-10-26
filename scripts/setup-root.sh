@@ -13,8 +13,9 @@ fi
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 install -m 0755 "$SRC_DIR/dsh-service" /usr/local/sbin/dsh-service
 install -m 0755 "$SRC_DIR/dsh-fix-owner" /usr/local/sbin/dsh-fix-owner
+install -m 0755 "$SRC_DIR/dsh-root-service" /usr/local/sbin/dsh-root-service
 cat > /etc/sudoers.d/dsh-desktop-root <<SUDOERS
-$USER_NAME ALL=(root) NOPASSWD: /usr/local/sbin/dsh-service, /usr/local/sbin/dsh-fix-owner
+$USER_NAME ALL=(root) NOPASSWD: /usr/local/sbin/dsh-service, /usr/local/sbin/dsh-fix-owner, /usr/local/sbin/dsh-root-service
 SUDOERS
 chmod 0440 /etc/sudoers.d/dsh-desktop-root
 visudo -cf /etc/sudoers.d/dsh-desktop-root >/dev/null
