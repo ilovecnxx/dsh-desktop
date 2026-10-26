@@ -114,6 +114,22 @@ function shouldPauseMotion(mode, focused, idleMs = 0, idleThresholdMs = 90 * 100
   return false
 }
 
+/**
+ * 根据会话运行状态变化决定是否发系统通知。
+ * @param {{running:boolean,dialogs:number}} prev 上一次轮询状态
+ * @param {{running:boolean,dialogs:number}} next 本次轮询状态
+ * @param {boolean} focused 窗口是否聚焦
+ * @param {{finishEnabled?:boolean,approvalEnabled?:boolean}} opts
+ * @returns {'finish'|'approval'|null}
+ */
+function sessionNotifyDecision(prev, next, focused, opts = {}) {
+  const { finishEnabled = true, approvalEnabled = true } = opts
+  if (focused) return null
+  if (approvalEnabled && Number(next.dialogs) > 0 && Number(prev.dialogs) === 0) return 'approval'
+  if (finishEnabled && prev.running === true && next.running === false) return 'finish'
+  return null
+}
+
 module.exports = {
   readTail,
   redact,
@@ -124,4 +140,5 @@ module.exports = {
   serviceRestartDelay,
   resolveMotionMode,
   shouldPauseMotion,
+  sessionNotifyDecision,
 }

@@ -84,6 +84,8 @@ function settingsHtml() {
     <select id="closeAction"><option value="tray">收进托盘</option><option value="quit">退出客户端（保留服务）</option><option value="quit-all">彻底退出（含后台）</option></select></div>
   <div class="row"><div><div class="label">Wayland 兼容模式（X11）</div><div class="hint">优先使用可用的 X11；认证不可用时回退到 Wayland，重启生效</div></div><input type="checkbox" id="useX11"></div>
   <div class="row"><div><div class="label">软件渲染</div><div class="hint">GPU 进程反复崩溃时启用，重启生效</div></div><input type="checkbox" id="softwareRendering"></div>
+  <div class="row"><div><div class="label">任务完成通知</div><div class="hint">窗口未聚焦时，会话运行结束弹系统通知</div></div><input type="checkbox" id="notifyOnFinish"></div>
+  <div class="row"><div><div class="label">等待确认通知</div><div class="hint">窗口未聚焦且出现确认弹窗时提醒</div></div><input type="checkbox" id="notifyOnApproval"></div>
   <div class="row"><div><div class="label">界面动效</div><div class="hint">会话运行时的动画在部分 Wayland/GPU 上很耗 CPU；失焦暂停可显著省电</div></div>
     <select id="motionMode"><option value="auto">自动（失焦或空闲时暂停）</option><option value="normal">正常</option><option value="blur">仅失焦时暂停</option><option value="always">始终暂停</option></select></div>
   <div class="row"><div><div class="label">开机自启</div><div class="hint">登录后自动启动客户端</div></div><input type="checkbox" id="autostart"></div>
@@ -114,6 +116,8 @@ async function refresh() {
   $('useX11').checked = !!state.config.useX11
   $('softwareRendering').checked = !!state.config.softwareRendering
   $('motionMode').value = state.config.motionMode || 'auto'
+  $('notifyOnFinish').checked = state.config.notifyOnFinish !== false
+  $('notifyOnApproval').checked = state.config.notifyOnApproval !== false
   $('globalShortcutEnabled').checked = !!state.config.globalShortcutEnabled
   $('autostart').checked = !!state.autostart
   $('healthIntervalMs').value = String(state.config.healthIntervalMs || 60000)
@@ -133,6 +137,8 @@ $('save').addEventListener('click', async () => {
       useX11: $('useX11').checked,
       softwareRendering: $('softwareRendering').checked,
       motionMode: $('motionMode').value,
+      notifyOnFinish: $('notifyOnFinish').checked,
+      notifyOnApproval: $('notifyOnApproval').checked,
       globalShortcutEnabled: $('globalShortcutEnabled').checked,
       healthIntervalMs: Number($('healthIntervalMs').value),
       autostart: $('autostart').checked,

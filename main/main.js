@@ -25,6 +25,7 @@ const {
   serviceRestartDelay,
   resolveMotionMode,
   shouldPauseMotion,
+  sessionNotifyDecision,
 } = require('./runtime-utils')
 const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
@@ -107,6 +108,8 @@ let logWrites = 0
 let lastMotionPaused = null
 let lastActivityAt = Date.now()
 let motionTimer = null
+let sessionWatchTimer = null
+let sessionPrev = { running: false, dialogs: 0 }
 const gpuCrashTimes = []
 const serviceExitTimes = []
 let gpuFallbackInProgress = false
@@ -142,9 +145,11 @@ function escapeHtml(text) {
 
 function notify(title, body) {
   try {
-    if (Notification.isSupported()) {
-      new Notification({ title, body, icon: iconPath('icon-256.png') }).show()
-    }
+    if (!Notification.isSupported()) return
+    const notification = new Notification({ title, body, icon: iconPath('icon-256.png') })
+    // 点击通知聚焦客户端
+    notification.on('click', () => showWindow())
+    notification.show()
   } catch {
     // ignore
   }
@@ -505,8 +510,28 @@ function schedulePageDiagnostics() {
         const perf = performance.memory
           ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize }
           : null
+        // 找出持续运行的动画元素，用于识别"会话运行中"
+        const runningEls = []
+        for (const el of document.querySelectorAll('*')) {
+          const st = getComputedStyle(el)
+          if (!st.animationName || st.animationName === 'none') continue
+          if (st.animationIterationCount !== 'infinite') continue
+          runningEls.push({
+            tag: el.tagName.toLowerCase(),
+            cls: String(el.getAttribute('class') || '').slice(0, 80),
+            label: el.getAttribute('aria-label') || '',
+            role: el.getAttribute('role') || '',
+            text: (el.textContent || '').trim().slice(0, 40),
+          })
+          if (runningEls.length >= 12) break
+        }
+        const dialogs = [...document.querySelectorAll('[role="dialog"], dialog')]
+          .slice(0, 5)
+          .map((d) => ({ text: (d.textContent || '').trim().slice(0, 120) }))
         return {
           title: document.title,
+          runningEls,
+          dialogs,
           url: location.href.replace(/token=[^&]+/, 'token=[redacted]'),
           visibility: document.visibilityState,
           anims: list.length,
@@ -1086,6 +1111,8 @@ function settingsSnapshot() {
       closeToTray: Boolean(config.get('closeToTray')),
       closeAction: resolveCloseAction(config.get('closeAction'), config.get('closeToTray')),
       motionMode: resolveMotionMode(config.get('motionMode')),
+      notifyOnFinish: config.get('notifyOnFinish') !== false,
+      notifyOnApproval: config.get('notifyOnApproval') !== false,
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
       useX11: config.get('useX11') !== false,
@@ -1111,6 +1138,10 @@ function applySettingsPatch(patch) {
   const closeAction = resolveCloseAction(merged.closeAction, merged.closeToTray)
   config.set('closeAction', closeAction)
   config.set('closeToTray', closeAction === 'tray')
+  if (merged.notifyOnFinish !== undefined) config.set('notifyOnFinish', Boolean(merged.notifyOnFinish))
+  if (merged.notifyOnApproval !== undefined) {
+    config.set('notifyOnApproval', Boolean(merged.notifyOnApproval))
+  }
   if (merged.motionMode !== undefined) {
     config.set('motionMode', resolveMotionMode(merged.motionMode))
     lastMotionPaused = null
@@ -1476,6 +1507,54 @@ function startAutoCheck() {
   }, delay)
 }
 
+const SESSION_STATE_JS = `(() => {
+  let running = false
+  const selector = '[class*="spinner"],[class*="sweep"],[class*="highlight"],[class*="shimmer"],[class*="state-dot"]'
+  for (const el of document.querySelectorAll(selector)) {
+    const st = getComputedStyle(el)
+    if (st.animationName && st.animationName !== 'none' && st.animationIterationCount === 'infinite') {
+      running = true
+      break
+    }
+  }
+  return {
+    running,
+    dialogs: document.querySelectorAll('[role="dialog"],dialog').length,
+    title: document.title,
+  }
+})()`
+
+async function pollSessionState() {
+  if (!win || win.isDestroyed() || quitting || upgrading) return
+  if (!/^http:\/\/127\.0\.0\.1/.test(win.webContents.getURL())) return
+  let state
+  try {
+    state = await win.webContents.executeJavaScript(SESSION_STATE_JS, true)
+  } catch {
+    return
+  }
+  if (!state || typeof state.running !== 'boolean') return
+  const decision = sessionNotifyDecision(sessionPrev, state, win.isFocused(), {
+    finishEnabled: config.get('notifyOnFinish') !== false,
+    approvalEnabled: config.get('notifyOnApproval') !== false,
+  })
+  sessionPrev = { running: state.running, dialogs: Number(state.dialogs) || 0 }
+  if (!decision) return
+  const title =
+    typeof state.title === 'string' && state.title ? state.title : 'DeepSeek Harness'
+  if (decision === 'finish') notify('会话已完成', title)
+  else notify('可能需要你的确认', title)
+  log(`系统通知: ${decision === 'finish' ? '会话完成' : '等待确认'}（${title}）`)
+}
+
+function startSessionWatcher() {
+  if (sessionWatchTimer) clearInterval(sessionWatchTimer)
+  sessionPrev = { running: false, dialogs: 0 }
+  sessionWatchTimer = setInterval(() => {
+    pollSessionState().catch((err) => log(`会话状态轮询失败: ${err.message}`))
+  }, 5000)
+}
+
 async function bootstrap() {
   config = new Config(USER_DATA)
   rotateIfNeeded(MAIN_LOG, MAIN_LOG_MAX_BYTES)
@@ -1545,6 +1624,7 @@ async function bootstrap() {
     // ignore
   }
   log(`客户端启动完成 dsh=${installedVersionSafe()} electron=${process.versions.electron} elapsedMs=${Math.round(performance.now() - bootStartedAt)}`)
+  startSessionWatcher()
 
   if (config.get('shellAutoCheck')) {
     setTimeout(() => {
@@ -1642,6 +1722,7 @@ if (!gotLock) {
     quitting = true
     if (autoCheckTimer) clearInterval(autoCheckTimer)
     if (motionTimer) clearInterval(motionTimer)
+    if (sessionWatchTimer) clearInterval(sessionWatchTimer)
     if (healthTimer) clearInterval(healthTimer)
     if (boundsTimer) clearTimeout(boundsTimer)
     if (config) config.save()

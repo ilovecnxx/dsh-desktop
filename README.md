@@ -28,6 +28,7 @@ Windows / macOS 客户端的体验：原生窗口、系统托盘、应用菜单�
 - **界面动效省电**：默认「自动」模式（失焦或空闲 90 秒暂停循环动画，输入即恢复），
   可设正常/仅失焦/始终暂停；实测运行态动画 CPU 66% → 8.2%
 - **Linux 安装包**：支持 `npm run dist:linux` 生成 `.deb` / AppImage，Release CI 自动发布
+- **系统通知**：窗口未聚焦时，会话完成/等待确认会弹系统通知，点击回到客户端（可开关）
 - **日志轮转**：`main.log` / `server.log` 超过 2 MiB 自动轮转为 `.1`，避免长期运行无限增长
 - 应用菜单/托盘/设置提供「彻底退出（含网页服务）」；`Ctrl+Q` 只退出客户端、保留服务
 - 关闭窗口行为可选：收进托盘 / 退出客户端（保留服务）/ 彻底退出；托盘菜单创建时即绑定
@@ -185,6 +186,7 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 
 ## 版本与优化记录
 
+- 1.3.1：系统通知（会话完成/等待确认）；详见 [OPTIMIZATION-1.3.1.md](OPTIMIZATION-1.3.1.md)
 - 1.3.0：自动节能动效（空闲暂停）、`.deb`/AppImage 打包与 Release CI；详见 [OPTIMIZATION-1.3.0.md](OPTIMIZATION-1.3.0.md)
 - 1.2.6：界面动效省电（精准暂停循环动画，CPU 66%→8.2%）；详见 [OPTIMIZATION-1.2.6.md](OPTIMIZATION-1.2.6.md)
 - 1.2.5：GPU 崩溃不再直接退出、启动失败自动软件渲染、服务崩溃退避重启；详见 [OPTIMIZATION-1.2.5.md](OPTIMIZATION-1.2.5.md)

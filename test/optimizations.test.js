@@ -12,6 +12,7 @@ const {
   serviceRestartDelay,
   resolveMotionMode,
   shouldPauseMotion,
+  sessionNotifyDecision,
 } = require('../main/runtime-utils')
 const shellUpdater = require('../main/shell-updater')
 
@@ -155,4 +156,21 @@ test('motion mode validates and pauses based on focus', () => {
   assert.equal(shouldPauseMotion('auto', true, 120 * 1000), true)
   assert.equal(shouldPauseMotion('auto', false, 0), true)
   assert.equal(resolveMotionMode(undefined), 'auto')
+})
+
+test('sessionNotifyDecision notifies finish/approval only when unfocused', () => {
+  const base = { running: false, dialogs: 0 }
+  // 运行 -> 空闲，未聚焦：完成通知
+  assert.equal(sessionNotifyDecision({ running: true, dialogs: 0 }, base, false), 'finish')
+  // 聚焦时不打扰
+  assert.equal(sessionNotifyDecision({ running: true, dialogs: 0 }, base, true), null)
+  // 空闲期间不重复通知
+  assert.equal(sessionNotifyDecision(base, base, false), null)
+  // 新弹窗且未聚焦：确认通知
+  assert.equal(sessionNotifyDecision(base, { running: true, dialogs: 1 }, false), 'approval')
+  // 弹窗未变化不重复
+  assert.equal(sessionNotifyDecision({ running: true, dialogs: 1 }, { running: true, dialogs: 1 }, false), null)
+  // 可关闭
+  assert.equal(sessionNotifyDecision({ running: true, dialogs: 0 }, base, false, { finishEnabled: false }), null)
+  assert.equal(sessionNotifyDecision(base, { running: true, dialogs: 1 }, false, { approvalEnabled: false }), null)
 })

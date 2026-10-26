@@ -37,6 +37,9 @@ const DEFAULT_CONFIG = {
   // 界面动效：normal 正常 / blur 窗口失焦时暂停 / always 始终暂停
   // dsh Web UI 的运行态动画在部分 Wayland/GPU 环境下 CPU 开销很大，失焦时暂停可显著省电
   motionMode: 'auto',
+  // 系统通知：会话跑完 / 需要确认（窗口未聚焦时）
+  notifyOnFinish: true,
+  notifyOnApproval: true,
   // 自动模式下，窗口聚焦但空闲超过该时长也暂停循环动画
   motionIdleMs: 90 * 1000,
 }
