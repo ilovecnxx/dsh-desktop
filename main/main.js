@@ -1008,10 +1008,29 @@ async function waitForExternalService(timeoutMs = 90000) {
   return null
 }
 
+/**
+ * 外部服务模式下客户端不会自己拉起 dsh；但若配置端口正好对应本机 systemd 用户服务，
+ * 且该服务未运行，这里先尝试把它启动起来，避免干等超时后直接退出。
+ */
+async function tryStartUserService(targetPort) {
+  const systemd = require('./systemd-service')
+  if (Number(systemd.unitPort()) !== Number(targetPort)) return false
+  if (systemd.isActive()) return true
+  try {
+    log(`外部服务未运行，尝试启动 ${systemd.UNIT_NAME}（端口 ${targetPort}）`)
+    systemd.start()
+    return true
+  } catch (err) {
+    log(`启动 ${systemd.UNIT_NAME} 失败: ${err.message}`)
+    return false
+  }
+}
+
 async function ensureServer() {
   if (config.get('externalService')) {
     let existing = await server.detectExisting()
     if (!existing || !existing.url) {
+      await tryStartUserService(port)
       log('外部服务暂不可用，等待服务就绪（最多 90 秒）')
       if (win && !win.isDestroyed()) await showReconnectPage('正在连接外部 dsh 服务…')
       existing = await waitForExternalService(90000)
@@ -1098,6 +1117,7 @@ async function restartServer() {
   recovering = true
   try {
     if (config.get('externalService')) {
+      await tryStartUserService(port)
       const existing = await waitForExternalService(60000)
       if (!existing || !existing.url) throw new Error('外部服务 60 秒内不可用')
       server.attachExisting(existing)
@@ -1222,7 +1242,8 @@ async function recoverService(reason) {
       server.attachExisting(existing)
       managed = Boolean(server.child)
     } else if (config.get('externalService')) {
-      // 外部服务（如 root 系统服务）由 systemd 负责重启，这里只等待并重连
+      // 外部服务（如 root 系统服务）由 systemd 负责重启；用户服务则先尝试拉起再等待
+      await tryStartUserService(port)
       const recovered = await waitForExternalService(120000)
       if (!recovered || !recovered.url) throw new Error('外部服务在 120 秒内未恢复')
       server.attachExisting(recovered)

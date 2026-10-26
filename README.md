@@ -195,6 +195,7 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 
 ## 版本与优化记录
 
+- 1.4.10：外部服务模式下自动拉起用户服务，避免启动卡 90 秒；详见 [OPTIMIZATION-1.4.10.md](OPTIMIZATION-1.4.10.md)
 - 1.4.9：拖拽模糊弹层自动诊断与关闭、阻止 file:// 导航；详见 [OPTIMIZATION-1.4.9.md](OPTIMIZATION-1.4.9.md)
 - 1.4.8：修复拖拽遮罩残留导致的“模糊界面”；详见 [OPTIMIZATION-1.4.8.md](OPTIMIZATION-1.4.8.md)
 - 1.4.7：修复粘贴/文件夹 IPC 未注册问题，长文本转文件端到端验证；详见 [OPTIMIZATION-1.4.7.md](OPTIMIZATION-1.4.7.md)

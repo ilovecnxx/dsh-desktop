@@ -5,6 +5,7 @@ const path = require('node:path')
 const {
   buildUnit,
   parseTokenFromLog,
+  parseUnitPort,
   unitPath,
   UNIT_NAME,
 } = require('../main/systemd-service')
@@ -39,6 +40,18 @@ test('parseTokenFromLog picks the latest token for the requested port', () => {
   assert.equal(parseTokenFromLog(log, 3099), 'http://127.0.0.1:3099/?token=OTHER')
   assert.equal(parseTokenFromLog(log, 3100), null)
   assert.equal(parseTokenFromLog('', 3080), null)
+})
+
+test('parseUnitPort reads the listening port from an installed unit', () => {
+  const unit = buildUnit({
+    dshHome: '/home/user/.dsh',
+    port: 3080,
+    workspace: '/home/user',
+    logFile: '/tmp/sd.log',
+  })
+  assert.equal(parseUnitPort(unit), 3080)
+  assert.equal(parseUnitPort(''), null)
+  assert.equal(parseUnitPort('[Service]\nExecStart=/usr/bin/dsh'), null)
 })
 
 test('buildUnit supports root helper execution', () => {

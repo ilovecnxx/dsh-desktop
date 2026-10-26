@@ -89,6 +89,21 @@ function isActive() {
   }
 }
 
+/** 从 unit 文本解析监听端口（无法解析返回 null）。 */
+function parseUnitPort(text) {
+  const match = /--port\s+(\d+)/.exec(String(text || ''))
+  return match ? Number(match[1]) : null
+}
+
+/** 读取已安装 unit 的监听端口（未安装或解析失败返回 null）。 */
+function unitPort() {
+  try {
+    return parseUnitPort(fs.readFileSync(unitPath(), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
 function mainPid() {
   try {
     const out = execFileSync(
@@ -121,6 +136,8 @@ module.exports = {
   start,
   stop,
   isActive,
+  parseUnitPort,
+  unitPort,
   mainPid,
   parseTokenFromLog,
 }
