@@ -327,6 +327,7 @@ function createWindow() {
     },
   })
   win.setMenuBarVisibility(false)
+  attachDevToolsShortcut(win.webContents)
 
   win.on('close', (event) => {
     saveWindowBounds()
@@ -539,6 +540,7 @@ function createAuxWindow(targetUrl) {
     },
   })
   auxWindows.add(aux)
+  attachDevToolsShortcut(aux.webContents)
   aux.on('closed', () => {
     auxWindows.delete(aux)
     auxMotionState.delete(aux)
@@ -2231,6 +2233,10 @@ async function handleUtilityAction(payload) {
       const file = await captureUiReport('manual')
       return { message: file ? `界面状态已保存：${file}` : '采集界面状态失败' }
     }
+    case 'github-status':
+      return showGithubStatus()
+    case 'dsh-command':
+      return showDshCommandInfo()
     case 'migration-wizard':
       return migrationWizard()
     case 'check-github-release':
@@ -2441,8 +2447,13 @@ function menuContext() {
       }
       refreshMenus()
     },
-    quit: () => quitApp(),
-    quitAll: () => quitApp({ stopExternal: true }),
+    quit: () => quitApp({ confirm: true }),
+    quitAll: () => quitApp({ stopExternal: true, confirm: true }),
+    githubStatus: () => showGithubStatus(),
+    dshCommand: () => showDshCommandInfo(),
+    toggleDevTools: () => {
+      if (win && !win.isDestroyed()) win.webContents.toggleDevTools()
+    },
   }
 }
 
@@ -2505,6 +2516,136 @@ function createTray() {
   }
 }
 
+function attachDevToolsShortcut(wc) {
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    const key = String(input.key || '').toLowerCase()
+    const combo = input.key === 'F12' || ((input.control || input.meta) && input.shift && key === 'i')
+    if (!combo) return
+    event.preventDefault()
+    wc.toggleDevTools()
+  })
+}
+
+async function showGithubStatus() {
+  const status = await fetchGithubStatus()
+  if (status.error) {
+    dialog.showErrorBox('GitHub 状态获取失败', String(status.error))
+    return status
+  }
+  const detail =
+    `仓库：${status.repo}
+` +
+    `Stars：${status.stars}   Forks：${status.forks}   开放 issue：${status.openIssues}
+` +
+    `最新 Release：${status.latestRelease ? status.latestRelease.tag : '未知'}
+` +
+    `CI（${status.ci ? status.ci.name : 'CI'}）：${status.ci ? `${status.ci.status}/${status.ci.conclusion || '进行中'}` : '未知'}
+` +
+    `E2E：${status.e2e ? `${status.e2e.status}/${status.e2e.conclusion || '进行中'}` : '未知'}
+` +
+    `获取时间：${new Date(status.fetchedAt).toLocaleString()}`
+  const answer = await dialog.showMessageBox(win, {
+    type: 'info',
+    title: 'GitHub 状态',
+    message: 'DeepSeek Harness Desktop',
+    detail,
+    buttons: ['打开仓库', '打开 Actions', '刷新', '关闭'],
+    defaultId: 0,
+    cancelId: 3,
+    noLink: true,
+  })
+  if (answer.response === 0) shell.openExternal(`https://github.com/${status.repo}`)
+  else if (answer.response === 1) shell.openExternal(`https://github.com/${status.repo}/actions`)
+  else if (answer.response === 2) return showGithubStatus()
+  return status
+}
+
+async function fetchGithubStatus() {
+  const repo = 'ilovecnxx/dsh-desktop'
+  const fetchedAt = Date.now()
+  try {
+    const [info, release, runs] = await Promise.all([
+      fetchJson(`https://api.github.com/repos/${repo}`),
+      fetchJson(`https://api.github.com/repos/${repo}/releases/latest`),
+      fetchJson(`https://api.github.com/repos/${repo}/actions/runs?per_page=30`),
+    ])
+    const allRuns = Array.isArray(runs.workflow_runs) ? runs.workflow_runs : []
+    const pick = (name) => {
+      const run = allRuns.find((item) => item.name === name)
+      if (!run) return null
+      return {
+        name: run.name,
+        status: run.status,
+        conclusion: run.conclusion,
+        url: run.html_url,
+        createdAt: run.created_at,
+      }
+    }
+    return {
+      repo,
+      fetchedAt,
+      stars: info.stargazers_count,
+      forks: info.forks_count,
+      openIssues: info.open_issues_count,
+      subscribers: info.subscribers_count,
+      latestRelease: release && release.tag_name
+        ? { tag: release.tag_name, url: release.html_url, publishedAt: release.published_at }
+        : null,
+      ci: pick('Release Linux packages') || pick('CI'),
+      e2e: pick('E2E attachments'),
+    }
+  } catch (err) {
+    return { repo, fetchedAt, error: String(err.message || err) }
+  }
+}
+
+async function showDshCommandInfo() {
+  let dshPath = ''
+  let dshVersion = ''
+  try {
+    dshPath = execFileSync('which', ['dsh'], { encoding: 'utf8', timeout: 5000 }).trim()
+  } catch {
+    dshPath = ''
+  }
+  if (dshPath) {
+    try {
+      dshVersion = execFileSync(dshPath, ['--version'], { encoding: 'utf8', timeout: 8000 }).trim()
+    } catch {
+      dshVersion = ''
+    }
+  }
+  const detail =
+    `dsh 命令：${dshPath || '未找到（PATH 中没有 dsh）'}
+` +
+    `dsh 版本：${dshVersion || installedVersionSafe()}
+` +
+    `桌面客户端：v${app.getVersion()}
+` +
+    `服务端口：${port}（${serviceModeLabel()}）
+
+` +
+    `本客户端使用系统/全局安装的 dsh；如需安装或修复：\n` +
+    `npm i -g @deepseek-ai/dsh`
+  const answer = await dialog.showMessageBox(win, {
+    type: 'info',
+    title: '管理 dsh 命令',
+    message: 'dsh 命令状态',
+    detail,
+    buttons: ['复制安装命令', '打开 npm 页面', '关闭'],
+    defaultId: 2,
+    cancelId: 2,
+    noLink: true,
+  })
+  if (answer.response === 0) {
+    clipboard.writeText('npm i -g @deepseek-ai/dsh')
+    notify('已复制', 'npm i -g @deepseek-ai/dsh')
+  } else if (answer.response === 1) {
+    shell.openExternal('https://www.npmjs.com/package/@deepseek-ai/dsh')
+  }
+  return { path: dshPath, version: dshVersion }
+}
+
 async function showAbout() {
   const answer = await dialog.showMessageBox(win, {
     type: 'info',
@@ -2515,20 +2656,34 @@ async function showAbout() {
       `客户端更新源：v${shellUpdater.sourceVersion() || '未知'}\n` +
       `dsh 运行时：v${installedVersionSafe()}\n` +
       `更新通道：${config.get('channel')}\n` +
-      `服务模式：${managed ? '客户端托管' : '复用外部服务'}\n` +
+      `服务模式：${managed ? '客户端托管' : '复用外部服务'}（${serviceModeLabel()}）\n` +
       `服务自动重启：${config.get('autoRestartService') ? '开' : '关'}\n` +
       `软件渲染：${config.get('softwareRendering') ? '开' : '关（GPU 加速）'}\n` +
       `端口：${port}\n` +
       `Electron：v${process.versions.electron}\n` +
-      `Node：v${process.versions.node}`,
+      `Node：v${process.versions.node}\n` +
+      `GitHub：https://github.com/ilovecnxx/dsh-desktop`,
     buttons: ['好'],
     noLink: true,
   })
   return answer
 }
 
-function quitApp({ stopExternal = false } = {}) {
+async function quitApp({ stopExternal = false, confirm = false } = {}) {
   if (quitPromise) return quitPromise
+  if (confirm && sessionPrev.running) {
+    const answer = await dialog.showMessageBox(win, {
+      type: 'warning',
+      title: '退出客户端',
+      message: '当前有任务正在运行',
+      detail: '退出会中断正在运行的任务（可选择保留后台服务，下次打开继续）。',
+      buttons: ['仍然退出', '取消'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    if (answer.response !== 0) return false
+  }
   quitting = true
   quitPromise = (async () => {
     try {

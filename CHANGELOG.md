@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0 — 2026-10-26
+
+- 对齐官方桌面端高频能力（详见 `docs/OFFICIAL-PARITY.md`）：
+  - GitHub 状态面板：Stars/Forks/开放 issue/最新 Release/CI/E2E 状态；
+  - 管理 dsh 命令：检查 PATH/版本、复制安装命令；
+  - 开发者工具快捷键 F12 / Ctrl+Shift+I（主窗口与多窗口）；
+  - 退出客户端时若任务运行中会二次确认；
+  - 关于面板补充 GitHub 地址、服务模式、dsh/Electron/Node 版本。
+- 菜单/诊断面板新入口：GitHub 状态、管理 dsh 命令、开发者工具。
+- 测试总数 30。
+
 ## 1.4.24 — 2026-10-26
 
 - 窗口标题栏显示当前服务模式：`<页面标题> · 普通模式` / `· root 模式`

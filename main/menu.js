@@ -58,6 +58,7 @@ function buildApplicationMenu(ctx) {
       label: 'DeepSeek Harness',
       submenu: [
         { label: '关于 DeepSeek Harness', click: () => ctx.showAbout() },
+        { label: '管理 dsh 命令…', click: () => ctx.dshCommand() },
         { label: '新建窗口', accelerator: 'CmdOrCtrl+Shift+N', click: () => ctx.newWindow() },
         { label: '最近会话', submenu: recentSessionSubmenu(ctx) },
     { label: '打开文件夹作为工作区…', click: () => ctx.openFolderWorkspace() },
@@ -130,7 +131,9 @@ function buildApplicationMenu(ctx) {
         },
         { type: 'separator' },
         { label: '查看 dsh 更新说明', click: () => ctx.openExternal('https://github.com/deepseek-ai/deepseek-harness/releases') },
+        { label: 'GitHub 状态…', click: () => ctx.githubStatus() },
         { label: '诊断信息…', click: () => ctx.openDiagnostics() },
+        { label: '开发者工具 (F12)', click: () => ctx.toggleDevTools() },
       ],
     },
   ]
