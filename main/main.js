@@ -352,6 +352,12 @@ function createWindow() {
       quitApp({ stopExternal: true })
     }
   })
+  win.on('page-title-updated', (event, title) => {
+    // 保留“页面标题 + 当前模式”，避免 dsh 前端把模式标识覆盖掉
+    event.preventDefault()
+    pageBaseTitle = title || APP_NAME
+    updateWindowTitle()
+  })
   win.on('focus', () => {
     markActivity()
     syncMotionState()
@@ -2440,12 +2446,34 @@ function menuContext() {
   }
 }
 
+function serviceModeLabel(targetPort = port) {
+  const p = Number(targetPort || 3080)
+  if (p === 3081) return 'root 模式'
+  if (p === 3080) return '普通模式'
+  return `模式 ${p}`
+}
+
+let pageBaseTitle = APP_NAME
+let lastWindowTitle = ''
+
+function updateWindowTitle() {
+  if (!win || win.isDestroyed()) return
+  const title = `${pageBaseTitle} · ${serviceModeLabel()}`
+  try {
+    win.setTitle(title)
+    if (title !== lastWindowTitle) {
+      lastWindowTitle = title
+      log(`窗口标题: ${title}`)
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function updateTrayTooltip() {
   if (!tray) return
   try {
-    const mode =
-      port === 3080 ? '开发服务 3080' : port === 3081 ? 'root 测试 3081' : `端口 ${port}`
-    tray.setToolTip(`DeepSeek Harness · ${mode}`)
+    tray.setToolTip(`DeepSeek Harness · ${serviceModeLabel()}`)
   } catch {
     // ignore
   }
@@ -2794,6 +2822,7 @@ async function bootstrap() {
   createTray()
   refreshMenus()
   updateTrayTooltip()
+  updateWindowTitle()
   registerGlobalShortcut()
   try {
     win.webContents.session.on('will-download', (event, item) => {
