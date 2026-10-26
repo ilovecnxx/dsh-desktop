@@ -72,6 +72,17 @@ function buildApplicationMenu(ctx) {
         { label: '更新通道', submenu: channelSubmenu(ctx) },
         { label: '从 GitHub 检查客户端更新…', click: () => ctx.checkGithubRelease() },
         { type: 'separator' },
+        {
+          label: '查看',
+          submenu: [
+            { label: '放大界面 (Ctrl+=)', click: () => ctx.zoomIn() },
+            { label: '缩小界面 (Ctrl+-)', click: () => ctx.zoomOut() },
+            { label: '重置缩放 (Ctrl+0)', click: () => ctx.zoomReset() },
+            { type: 'separator' },
+            { label: '全屏', accelerator: 'F11', click: () => ctx.toggleFullScreen() },
+            { label: '开发者工具 (F12)', click: () => ctx.toggleDevTools() },
+          ],
+        },
         { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => ctx.openSettings() },
         { label: '重启客户端', click: () => ctx.restartApp() },
         { type: 'separator' },

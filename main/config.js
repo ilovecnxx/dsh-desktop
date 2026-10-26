@@ -60,6 +60,10 @@ const DEFAULT_CONFIG = {
   autoCollapseCompletedTasks: true,
   // 首次关闭到托盘提示只显示一次（持久化）
   closeHintShown: false,
+  // 主界面右下角状态胶囊（模式/端口/快捷操作）
+  showStatusPill: true,
+  // 界面缩放（1 = 100%）
+  uiZoom: 1,
   notifyOnApproval: true,
   // 自动模式下，窗口聚焦但空闲超过该时长也暂停循环动画
   motionIdleMs: 90 * 1000,

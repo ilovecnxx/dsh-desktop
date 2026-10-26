@@ -93,6 +93,8 @@ function settingsHtml() {
   <div class="row"><div><div class="label">长文本粘贴转文件</div><div class="hint">超过阈值的内容保存为 txt 文件并插入路径</div></div><input type="checkbox" id="pasteToFileEnabled"></div>
   <div class="row"><div><div class="label">转换阈值（字符）</div></div><input type="number" id="pasteToFileThreshold" min="500" max="200000" step="500"></div>
   <div class="row"><div><div class="label">工作区闲置回收（分钟）</div><div class="hint">窗口失焦超过该时长自动关闭并释放内存</div></div><input type="number" id="workspaceIdleMinutes" min="1" max="240" step="1"></div>
+  <div class="row"><div><div class="label">显示状态胶囊</div><div class="hint">右下角显示模式/端口与快捷操作</div></div><input type="checkbox" id="showStatusPill"></div>
+  <div class="row"><div><div class="label">界面缩放</div></div><select id="uiZoom"><option value="0.9">90%</option><option value="1">100%</option><option value="1.1">110%</option><option value="1.25">125%</option></select></div>
   <div class="row"><div><div class="label">全部完成后收起任务面板</div><div class="hint">启发式：仅隐藏明确显示“全部完成”的任务/待办面板</div></div><input type="checkbox" id="autoCollapseCompletedTasks"></div>
   <div class="row"><div><div class="label">自动隐藏运行中状态条</div><div class="hint">空闲时隐藏 dsh 前端残留的「任务运行中」条</div></div><input type="checkbox" id="autoHideStaleRunning"></div>
   <div class="row"><div><div class="label">工作区实例上限</div><div class="hint">同时打开的工作区窗口数，超出按最旧自动关闭</div></div><input type="number" id="workspaceLimit" min="1" max="10" step="1"></div>
@@ -145,6 +147,8 @@ function refresh() {
   $('workspaceIdleMinutes').value = String(state.config.workspaceIdleMinutes || 10)
   $('autoHideStaleRunning').checked = state.config.autoHideStaleRunning !== false
   $('autoCollapseCompletedTasks').checked = state.config.autoCollapseCompletedTasks !== false
+  $('showStatusPill').checked = state.config.showStatusPill !== false
+  $('uiZoom').value = String(state.config.uiZoom || 1)
   $('globalShortcutEnabled').checked = !!state.config.globalShortcutEnabled
   $('autostart').checked = !!state.autostart
   $('healthIntervalMs').value = String(state.config.healthIntervalMs || 60000)
@@ -175,6 +179,8 @@ $('save').addEventListener('click', async () => {
       workspaceIdleMinutes: Number($('workspaceIdleMinutes').value),
       autoHideStaleRunning: $('autoHideStaleRunning').checked,
       autoCollapseCompletedTasks: $('autoCollapseCompletedTasks').checked,
+      showStatusPill: $('showStatusPill').checked,
+      uiZoom: Number($('uiZoom').value),
       globalShortcutEnabled: $('globalShortcutEnabled').checked,
       healthIntervalMs: Number($('healthIntervalMs').value),
       autostart: $('autostart').checked,

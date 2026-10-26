@@ -410,6 +410,8 @@ function createWindow() {
       win.webContents.send('dsh-desktop:ui-config', {
         autoHideStaleRunning: config.get('autoHideStaleRunning') !== false,
       autoCollapseCompletedTasks: config.get('autoCollapseCompletedTasks') !== false,
+      showStatusPill: config.get('showStatusPill') !== false,
+      uiZoom: clampZoom(config.get('uiZoom')),
         autoCollapseCompletedTasks: config.get('autoCollapseCompletedTasks') !== false,
       })
       if (process.env.DSH_DESKTOP_TEST_SIMULATE_PASTE) {
@@ -1711,6 +1713,13 @@ function applySettingsPatch(patch) {
       Math.max(500, Math.min(200000, Number(merged.pasteToFileThreshold) || 6000)),
     )
   }
+  if (merged.showStatusPill !== undefined) {
+    config.set('showStatusPill', Boolean(merged.showStatusPill))
+    sendShellStatus()
+  }
+  if (merged.uiZoom !== undefined) {
+    setUiZoom(merged.uiZoom)
+  }
   if (merged.autoCollapseCompletedTasks !== undefined) {
     config.set('autoCollapseCompletedTasks', Boolean(merged.autoCollapseCompletedTasks))
   }
@@ -2502,6 +2511,12 @@ function menuContext() {
     toggleDevTools: () => {
       if (win && !win.isDestroyed()) win.webContents.toggleDevTools()
     },
+    zoomIn: () => setUiZoom(clampZoom(config.get('uiZoom')) + 0.1),
+    zoomOut: () => setUiZoom(clampZoom(config.get('uiZoom')) - 0.1),
+    zoomReset: () => setUiZoom(1),
+    toggleFullScreen: () => {
+      if (win && !win.isDestroyed()) win.setFullScreen(!win.isFullScreen())
+    },
   }
 }
 
@@ -2527,6 +2542,46 @@ function updateWindowTitle() {
   } catch {
     // ignore
   }
+}
+
+function shellStatusPayload() {
+  return {
+    mode: serviceModeLabel(),
+    port,
+    healthy: serviceHealthy,
+    show: config.get('showStatusPill') !== false,
+    version: app.getVersion(),
+  }
+}
+
+function sendShellStatus() {
+  if (!win || win.isDestroyed()) return
+  try {
+    win.webContents.send('dsh-desktop:shell-status', shellStatusPayload())
+  } catch {
+    // ignore
+  }
+}
+
+function clampZoom(value) {
+  return Math.min(1.5, Math.max(0.8, Number(value) || 1))
+}
+
+function applyUiZoom() {
+  if (!win || win.isDestroyed()) return
+  try {
+    win.webContents.setZoomFactor(clampZoom(config.get('uiZoom')))
+  } catch {
+    // ignore
+  }
+}
+
+function setUiZoom(next) {
+  const value = clampZoom(next)
+  config.set('uiZoom', value)
+  config.save()
+  applyUiZoom()
+  return value
 }
 
 function updateTrayTooltip() {
@@ -2568,10 +2623,23 @@ function attachDevToolsShortcut(wc) {
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return
     const key = String(input.key || '').toLowerCase()
-    const combo = input.key === 'F12' || ((input.control || input.meta) && input.shift && key === 'i')
-    if (!combo) return
-    event.preventDefault()
-    wc.toggleDevTools()
+    const modifier = input.control || input.meta
+    if (input.key === 'F12' || (modifier && input.shift && key === 'i')) {
+      event.preventDefault()
+      wc.toggleDevTools()
+      return
+    }
+    if (!modifier) return
+    if (key === '=' || key === '+') {
+      event.preventDefault()
+      setUiZoom(clampZoom(config.get('uiZoom')) + 0.1)
+    } else if (key === '-') {
+      event.preventDefault()
+      setUiZoom(clampZoom(config.get('uiZoom')) - 0.1)
+    } else if (key === '0') {
+      event.preventDefault()
+      setUiZoom(1)
+    }
   })
 }
 
@@ -2766,6 +2834,28 @@ function registerIpc() {
   ipcMain.handle('dsh:save-pasted-file', (event, payload) => {
     if (!isOurSender(event.sender)) throw new Error('unexpected sender')
     return { path: savePastedFile(payload && payload.name, payload && payload.type, payload && payload.data) }
+  })
+  ipcMain.handle('dsh:shell-status', (event) => {
+    if (!isOurSender(event.sender)) throw new Error('unexpected sender')
+    return shellStatusPayload()
+  })
+  ipcMain.handle('dsh:ui-action', async (event, payload) => {
+    if (!isOurSender(event.sender)) throw new Error('unexpected sender')
+    const action = payload && payload.action
+    if (action === 'settings') return openSettingsWindow()
+    if (action === 'diagnostics') return openDiagnosticsWindow()
+    if (action === 'reload') {
+      if (win && !win.isDestroyed()) await win.loadURL(server && server.tokenUrl ? server.tokenUrl : `http://127.0.0.1:${port}/`)
+      return { ok: true }
+    }
+    if (action === 'switch') {
+      const target = port === 3081 ? 3080 : 3081
+      return switchService(target, target === 3080 ? '开发服务' : 'root 测试')
+    }
+    if (action === 'zoom-in') return { zoom: setUiZoom(clampZoom(config.get('uiZoom')) + 0.1) }
+    if (action === 'zoom-out') return { zoom: setUiZoom(clampZoom(config.get('uiZoom')) - 0.1) }
+    if (action === 'zoom-reset') return { zoom: setUiZoom(1) }
+    return { ok: false }
   })
   ipcMain.on('dsh:task-panels-collapsed', (event, payload) => {
     if (!isOurSender(event.sender)) return
@@ -3149,6 +3239,7 @@ async function bootstrap() {
   }
   log(`客户端启动完成 dsh=${installedVersionSafe()} electron=${process.versions.electron} elapsedMs=${Math.round(performance.now() - bootStartedAt)}`)
   startSessionWatcher()
+  setInterval(() => sendShellStatus(), 10000)
   writeStabilityReport()
   setInterval(() => writeStabilityReport(), 60000)
   if (INITIAL_DSH_URL) handleProtocolUrl(INITIAL_DSH_URL)

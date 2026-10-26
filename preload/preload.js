@@ -424,3 +424,74 @@ window.addEventListener(
   },
   true,
 )
+
+// ---- 右下角状态胶囊（模式/端口/健康 + 快捷操作）----
+const STATUS_PILL_ID = 'dsh-desktop-status-pill'
+
+function renderStatusPill(status) {
+  const existing = document.getElementById(STATUS_PILL_ID)
+  if (!status || status.show === false) {
+    existing?.remove()
+    return
+  }
+  let host = existing
+  if (!host) {
+    host = document.createElement('div')
+    host.id = STATUS_PILL_ID
+    const shadow = host.attachShadow({ mode: 'closed' })
+    shadow.innerHTML = `
+      <style>
+        :host { all: initial; }
+        .pill {
+          position: fixed; right: 14px; bottom: 112px; z-index: 2147483645;
+          display: flex; align-items: center; gap: 6px;
+          background: rgba(24, 25, 30, 0.78); border: 1px solid rgba(255,255,255,.09);
+          border-radius: 999px; padding: 3px 9px; color: #c9cbd4;
+          font: 11px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+          backdrop-filter: blur(8px); opacity: .68; transition: opacity .18s ease;
+          pointer-events: auto; user-select: none;
+        }
+        .pill:hover { opacity: 1; }
+        .dot { width: 7px; height: 7px; border-radius: 50%; background: #3ecf8e; flex: none; }
+        .pill.bad .dot { background: #f45b69; }
+        .mode { color: #f2f3f6; font-weight: 600; }
+        .port { color: #8d90a1; }
+        .actions { display: none; gap: 3px; margin-left: 3px; }
+        .pill:hover .actions { display: inline-flex; }
+        .actions button {
+          background: rgba(255,255,255,.08); color: #e8e8ea; border: 0; border-radius: 999px;
+          padding: 2px 7px; font: 11px/1.4 system-ui, sans-serif; cursor: pointer;
+        }
+        .actions button:hover { background: rgba(255,255,255,.16); }
+      </style>
+      <div class="pill">
+        <span class="dot"></span>
+        <span class="mode"></span>
+        <span class="port"></span>
+        <span class="actions">
+          <button data-action="settings" title="设置">设置</button>
+          <button data-action="diagnostics" title="诊断">诊断</button>
+          <button data-action="switch" title="切换服务模式">切换</button>
+          <button data-action="reload" title="刷新界面">刷新</button>
+        </span>
+      </div>`
+    document.documentElement.appendChild(host)
+    shadow.querySelectorAll('button[data-action]').forEach((button) => {
+      button.addEventListener('click', () => {
+        ipcRenderer.invoke('dsh:ui-action', { action: button.dataset.action }).catch(() => {})
+      })
+    })
+  }
+  const shadow = host.shadowRoot
+  const pill = shadow.querySelector('.pill')
+  pill.classList.toggle('bad', status.healthy === false)
+  shadow.querySelector('.mode').textContent = status.mode || ''
+  shadow.querySelector('.port').textContent = status.port ? `:${status.port}` : ''
+  pill.title = `DeepSeek Harness v${status.version || ''} · ${status.mode || ''} · ${status.healthy === false ? '服务异常' : '服务正常'}`
+}
+
+ipcRenderer.on('dsh-desktop:shell-status', (_event, status) => renderStatusPill(status))
+ipcRenderer
+  .invoke('dsh:shell-status')
+  .then((status) => renderStatusPill(status))
+  .catch(() => {})
