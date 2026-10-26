@@ -48,7 +48,7 @@ if [[ -z "$software" ]]; then
   software=$(/usr/bin/node -e 'try { process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1])).softwareRendering === true ? "1" : "0") } catch { process.stdout.write("0") }' "$config")
 fi
 extra=()
-if [[ "$software" == 1 ]]; then extra+=(--disable-gpu); fi
+if [[ "$software" == 1 ]]; then extra+=(--disable-gpu --in-process-gpu --disable-gpu-process-crash-limit); fi
 for arg in "$@"; do
   if [[ "$arg" == --ozone-platform* ]]; then exec "$APP_ROOT/dsh-desktop" "${extra[@]}" "$@"; fi
 done

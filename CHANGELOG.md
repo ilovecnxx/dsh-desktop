@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.15 — 2026-10-26
+
+- 稳定性修复：软件渲染模式启动参数增加 `--in-process-gpu`
+  与 `--disable-gpu-process-crash-limit`，避免独立 GPU 进程反复
+  `launch-failed(1002)` 导致客户端崩溃/自动重启。
+- 稳定性观察自动化：新增 `scripts/stability-snapshot.js` 与 systemd 用户定时器
+  `dsh-desktop-observe.timer`（每日 00:00，Persistent），把客户端/服务/端口/
+  stability.json/近期错误追加到 `~/.config/dsh-desktop/observation.jsonl`。
+- 已生成首次观察快照；测试总数 30。
+
 ## 1.4.14 — 2026-10-26
 
 - CI e2e 稳定化：`E2E attachments` 工作流改用 stub 页面验证
