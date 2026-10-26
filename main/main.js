@@ -118,6 +118,12 @@ let trayHintShown = false
 let autoCheckTimer = null
 let captureDone = false
 let healthTimer = null
+const stability = {
+  startedAt: Date.now(),
+  reconnects: 0,
+  gpuFallbacks: 0,
+  serviceRestarts: 0,
+}
 let healthFailures = 0
 let recovering = false
 let reconnectVisible = false
@@ -202,6 +208,7 @@ async function handleGpuProcessGone(details = {}) {
   }
   gpuFallbackInProgress = true
   const launchFailed = String(details.reason || '').includes('launch-failed')
+  stability.gpuFallbacks += 1
   log(`GPU 进程 10 分钟内反复崩溃，准备切换到软件渲染${launchFailed ? '（启动失败，自动切换）' : ''}`)
   if (TEST_GPU_FALLBACK) {
     config.set('softwareRendering', true)
@@ -559,6 +566,44 @@ function createAuxWindow(targetUrl) {
   return aux
 }
 
+function stabilityFilePath() {
+  return path.join(USER_DATA, 'stability.json')
+}
+
+function writeStabilityReport() {
+  try {
+    const data = {
+      version: app.getVersion(),
+      dshVersion: installedVersionSafe(),
+      startedAt: new Date(stability.startedAt).toISOString(),
+      uptimeMs: Date.now() - stability.startedAt,
+      reconnects: stability.reconnects,
+      gpuFallbacks: stability.gpuFallbacks,
+      serviceRestarts: stability.serviceRestarts,
+      port,
+      externalService: Boolean(config.get('externalService')),
+      workspaceCount: workspaceServices.size,
+      softwareRendering: Boolean(config.get('softwareRendering')),
+    }
+    fs.writeFileSync(stabilityFilePath(), JSON.stringify(data, null, 2) + '\n')
+    return data
+  } catch (err) {
+    log(`写入稳定性报告失败: ${err.message}`)
+    return null
+  }
+}
+
+function closeAllWorkspaces() {
+  for (const tracked of workspaceServices.values()) {
+    try {
+      if (tracked.win && !tracked.win.isDestroyed()) tracked.win.close()
+    } catch {
+      // ignore
+    }
+  }
+  return { message: `已关闭 ${workspaceServices.size} 个工作区窗口` }
+}
+
 function recentWorkspaces() {
   const list = config.get('recentWorkspaces')
   if (!Array.isArray(list)) return []
@@ -573,21 +618,31 @@ function recentWorkspaces() {
 
 async function openFolderWorkspace(folder) {
   if (!folder) return null
+  const limit = Math.max(1, Number(config.get('workspaceLimit') || 3))
+  if (workspaceServices.size >= limit) {
+    const [oldestKey, oldest] = workspaceServices.entries().next().value || []
+    if (oldest && oldest.win && !oldest.win.isDestroyed()) {
+      log(`工作区数量达到上限 ${limit}，关闭最旧工作区：${oldest.service.folder}`)
+      oldest.win.close()
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    }
+    if (workspaceServices.has(oldestKey)) workspaceServices.delete(oldestKey)
+  }
   const service = await workspaceService.startWorkspaceService(folder, { dshHome: DSH_HOME })
   const aux = createAuxWindow(service.url)
   if (aux) {
     const key = aux.webContents.id
-    workspaceServices.set(key, service)
+    workspaceServices.set(key, { service, win: aux })
     aux.on('closed', () => {
       const tracked = workspaceServices.get(key)
       workspaceServices.delete(key)
-      if (tracked) {
+      if (tracked && tracked.service) {
         try {
-          tracked.stop()
+          tracked.service.stop()
         } catch {
           // ignore
         }
-        log(`已关闭工作区服务 ${tracked.folder}`)
+        log(`已关闭工作区服务 ${tracked.service.folder}`)
       }
     })
     log(`已为文件夹启动工作区服务：${service.folder} (pid=${service.child.pid} port=${service.port})`)
@@ -1130,6 +1185,7 @@ async function ensureServer() {
 async function restartServer() {
   if (upgrading || recovering) return
   recovering = true
+  stability.serviceRestarts += 1
   try {
     if (config.get('externalService')) {
       await tryStartUserService(port)
@@ -1244,6 +1300,7 @@ async function checkHealthOnce() {
 async function recoverService(reason) {
   if (recovering || upgrading || quitting) return
   recovering = true
+  stability.reconnects += 1
   healthFailures = 0
   log(`服务异常（${reason}），开始自动恢复`)
   try {
@@ -1409,6 +1466,13 @@ function settingsSnapshot() {
       externalService: Boolean(config.get('externalService')),
       home: process.env.HOME || os.homedir(),
       workspaceCount: workspaceServices.size,
+      stability: {
+        uptimeMs: Date.now() - stability.startedAt,
+        reconnects: stability.reconnects,
+        gpuFallbacks: stability.gpuFallbacks,
+        serviceRestarts: stability.serviceRestarts,
+      },
+      workspaceLimit: Number(config.get('workspaceLimit') || 3),
       port: Number(config.get('port') || 3080),
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
@@ -1455,6 +1519,9 @@ function applySettingsPatch(patch) {
       'pasteToFileThreshold',
       Math.max(500, Math.min(200000, Number(merged.pasteToFileThreshold) || 6000)),
     )
+  }
+  if (merged.workspaceLimit !== undefined) {
+    config.set('workspaceLimit', Math.max(1, Math.min(10, Number(merged.workspaceLimit) || 3)))
   }
   if (merged.runServiceAsRoot !== undefined) {
     config.set('runServiceAsRoot', Boolean(merged.runServiceAsRoot))
@@ -1817,6 +1884,12 @@ async function handleUtilityAction(payload) {
       return enableSystemdService()
     case 'systemd-disable':
       return disableSystemdService()
+    case 'close-workspaces':
+      return closeAllWorkspaces()
+    case 'stability-report': {
+      const data = writeStabilityReport()
+      return { message: `稳定性报告：${stabilityFilePath()}${data ? '' : '（写入失败）'}` }
+    }
     case 'fix-owner':
       return fixDshOwner()
     default:
@@ -2361,6 +2434,8 @@ async function bootstrap() {
   }
   log(`客户端启动完成 dsh=${installedVersionSafe()} electron=${process.versions.electron} elapsedMs=${Math.round(performance.now() - bootStartedAt)}`)
   startSessionWatcher()
+  writeStabilityReport()
+  setInterval(() => writeStabilityReport(), 60000)
   if (INITIAL_DSH_URL) handleProtocolUrl(INITIAL_DSH_URL)
   refreshRecentSessions()
   if (recentSessionsTimer) clearInterval(recentSessionsTimer)
@@ -2405,6 +2480,60 @@ async function bootstrap() {
       log('[test] 隐藏窗口（用于空闲资源采样）')
       if (win && !win.isDestroyed()) win.hide()
     }, TEST_HIDE_MS)
+  }
+
+  if (process.env.DSH_DESKTOP_TEST_ATTACHMENTS === '1') {
+    setTimeout(async () => {
+      const result = {}
+      try {
+        result.drop = await win.webContents.executeJavaScript(
+          `(async () => {
+            const dt = new DataTransfer();
+            for (let i = 0; i < 3; i += 1) {
+              const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
+              dt.items.add(new File([bytes], 'img' + (i + 1) + '.png', { type: 'image/png' }));
+            }
+            const fire = (type) => {
+              const ev = new DragEvent(type, { bubbles: true, cancelable: true });
+              Object.defineProperty(ev, 'dataTransfer', { value: dt });
+              (document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2) || document.body).dispatchEvent(ev);
+            };
+            fire('dragenter');
+            fire('dragover');
+            fire('drop');
+            await new Promise((r) => setTimeout(r, 1800));
+            const chips = document.querySelectorAll('[class*="attachment"], [class*="file"], [class*="image"]').length;
+            const fullscreenBlur = [...document.querySelectorAll('*')].filter((el) => {
+              const st = getComputedStyle(el);
+              const rect = el.getBoundingClientRect();
+              return /blur/i.test(st.backdropFilter || '') && rect.width >= innerWidth * 0.9 && rect.height >= innerHeight * 0.9;
+            }).length;
+            return { chips, fullscreenBlur };
+          })()`,
+          true,
+        )
+        // 真实剪贴板图片 + Ctrl+V 粘贴
+        const png = nativeImage.createFromDataURL(
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        )
+        clipboard.write({ image: png })
+        await win.webContents.executeJavaScript(
+          `(() => { const el = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]'); if (el) el.focus(); return 'ok'; })()`,
+          true,
+        )
+        win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'V', modifiers: ['control'] })
+        win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'V', modifiers: ['control'] })
+        await new Promise((r) => setTimeout(r, 1800))
+        result.paste = await win.webContents.executeJavaScript(
+          `(() => ({ chips: document.querySelectorAll('[class*="attachment"], [class*="image"], img').length }))()`,
+          true,
+        )
+        log(`[test] attachments ${JSON.stringify(result)}`)
+      } catch (err) {
+        log(`[test] attachments failed: ${err.message}`)
+      }
+      setTimeout(() => app.quit(), 800)
+    }, 5000)
   }
 
   if (process.env.DSH_DESKTOP_TEST_NATIVE_DROP === '1') {
@@ -2586,10 +2715,11 @@ if (!gotLock) {
     if (autoCheckTimer) clearInterval(autoCheckTimer)
     if (motionTimer) clearInterval(motionTimer)
     if (sessionWatchTimer) clearInterval(sessionWatchTimer)
+    writeStabilityReport()
     if (recentSessionsTimer) clearInterval(recentSessionsTimer)
-    for (const service of workspaceServices.values()) {
+    for (const tracked of workspaceServices.values()) {
       try {
-        service.stop()
+        tracked.service && tracked.service.stop()
       } catch {
         // ignore
       }

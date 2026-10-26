@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.13 — 2026-10-26
+
+- 工作区实例内存优化：配置 `workspaceLimit`（默认 3），超限按最旧自动关闭；
+  诊断面板新增「关闭全部工作区」。
+- 图片附件自动化 e2e（`scripts/e2e-attachments.js`）：隔离 dsh 服务 + Electron
+  实测「三图批量拖拽」（chips=3、无模糊遮罩）与「剪贴板截图 Ctrl+V 粘贴」（chips=6）。
+- 稳定性指标：`stability.json`（运行时长、重连、GPU 降级、服务重启次数），
+  诊断面板新增运行时长/自动重连/GPU 降级行与「导出稳定性报告」。
+- 开机自启：用户级服务 `dsh-web-session.service` 已 enable，客户端 autostart 已配置。
+- CI 新增 `E2E attachments` 工作流（xvfb + 全局 dsh + 无头 Electron）。
+- 迁移文档补充 1–2 天稳定性观察清单；测试总数 30。
+
 ## 1.4.12 — 2026-10-26
 
 - 新增「最近工作区」菜单：记录最近 8 个通过客户端打开的文件夹，一键重新拉起

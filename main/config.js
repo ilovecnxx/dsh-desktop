@@ -50,6 +50,8 @@ const DEFAULT_CONFIG = {
   pasteToFileThreshold: 6000,
   // 以 root 运行后台服务（实验性，需要先安装免密助手）
   runServiceAsRoot: false,
+  // 同时保留的文件夹工作区实例上限（超出按最旧自动关闭）
+  workspaceLimit: 3,
   notifyOnApproval: true,
   // 自动模式下，窗口聚焦但空闲超过该时长也暂停循环动画
   motionIdleMs: 90 * 1000,

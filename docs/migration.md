@@ -25,3 +25,27 @@
 6. **卸载/清理**：`~/.local/opt/dsh-desktop`、`~/.config/dsh-desktop`、
    `/usr/local/sbin/dsh-service`、`/etc/systemd/system/dsh-web-root.service`、
    sudoers 文件按需移除。
+
+## 稳定性观察（1–2 天）
+
+观察已从 2026-10-26 开始。每天检查：
+
+```bash
+# 客户端是否在运行、web 服务是否健康
+pgrep -af "opt/dsh-desktop/dsh-desktop --ozone" | head -1
+ss -ltn | grep -E ':3080 |:3081 '
+systemctl --user is-active dsh-web-session.service
+systemctl is-active dsh-web-root.service
+
+# 稳定性指标（客户端每 60s 刷新一次）
+cat ~/.config/dsh-desktop/stability.json
+```
+
+观察清单：
+
+- [ ] `stability.json` 中 `reconnects`、`gpuFallbacks`、`serviceRestarts` 保持 0 或极少；
+- [ ] 客户端连续运行期间无崩溃/白屏；
+- [ ] 拖拽图片/文件夹、多窗口、最近会话、长文本转文件均正常；
+- [ ] 服务端重启（systemctl restart）后客户端能自动重连；
+- [ ] 2 天后无异常 → 结束观察，按上文「迁移步骤」正式切换；
+- [ ] 出现异常 → 保留 `main.log`、`stability.json`，用浏览器打开 3080 继续工作并回滚。

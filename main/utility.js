@@ -92,6 +92,7 @@ function settingsHtml() {
   <div class="row"><div><div class="label">等待确认通知</div><div class="hint">窗口未聚焦且出现确认弹窗时提醒</div></div><input type="checkbox" id="notifyOnApproval"></div>
   <div class="row"><div><div class="label">长文本粘贴转文件</div><div class="hint">超过阈值的内容保存为 txt 文件并插入路径</div></div><input type="checkbox" id="pasteToFileEnabled"></div>
   <div class="row"><div><div class="label">转换阈值（字符）</div></div><input type="number" id="pasteToFileThreshold" min="500" max="200000" step="500"></div>
+  <div class="row"><div><div class="label">工作区实例上限</div><div class="hint">同时打开的工作区窗口数，超出按最旧自动关闭</div></div><input type="number" id="workspaceLimit" min="1" max="10" step="1"></div>
   <div class="row"><div><div class="label">以 root 运行服务（实验性）</div><div class="hint">需先运行 sudo bash scripts/setup-root.sh；会以 root 运行 dsh web</div></div><input type="checkbox" id="runServiceAsRoot"></div>
   <div class="row"><div><div class="label">界面动效</div><div class="hint">会话运行时的动画在部分 Wayland/GPU 上很耗 CPU；失焦暂停可显著省电</div></div>
     <select id="motionMode"><option value="auto">自动（失焦或空闲时暂停）</option><option value="normal">正常</option><option value="blur">仅失焦时暂停</option><option value="always">始终暂停</option></select></div>
@@ -113,7 +114,14 @@ function settingsHtml() {
 </div>
 <script>
 const $ = (id) => document.getElementById(id)
-async function refresh() {
+async function fmtDuration(ms) {
+  const total = Math.max(0, Math.floor(Number(ms) || 0) / 1000)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  return h > 0 ? h + 'h ' + m + 'm' : m + 'm'
+}
+
+function refresh() {
   const state = await window.dshUtility.invoke('settings:get')
   $('channel').value = state.config.channel
   $('autoCheck').checked = !!state.config.autoCheck
@@ -130,6 +138,7 @@ async function refresh() {
   $('pasteToFileEnabled').checked = state.config.pasteToFileEnabled !== false
   $('pasteToFileThreshold').value = String(state.config.pasteToFileThreshold || 6000)
   $('runServiceAsRoot').checked = Boolean(state.config.runServiceAsRoot)
+  $('workspaceLimit').value = String(state.config.workspaceLimit || 3)
   $('globalShortcutEnabled').checked = !!state.config.globalShortcutEnabled
   $('autostart').checked = !!state.autostart
   $('healthIntervalMs').value = String(state.config.healthIntervalMs || 60000)
@@ -156,6 +165,7 @@ $('save').addEventListener('click', async () => {
       pasteToFileEnabled: $('pasteToFileEnabled').checked,
       pasteToFileThreshold: Number($('pasteToFileThreshold').value),
       runServiceAsRoot: $('runServiceAsRoot').checked,
+      workspaceLimit: Number($('workspaceLimit').value),
       globalShortcutEnabled: $('globalShortcutEnabled').checked,
       healthIntervalMs: Number($('healthIntervalMs').value),
       autostart: $('autostart').checked,
@@ -205,6 +215,8 @@ function diagnosticsHtml() {
     <button id="switch-test-service">连接 root 测试(3081)</button>
     <button id="root-service-start">启动 root 服务</button>
     <button id="root-service-stop">停止 root 服务</button>
+    <button id="close-workspaces">关闭全部工作区</button>
+    <button id="stability-report">导出稳定性报告</button>
     <button id="clear-cache">清理缓存</button>
   </div>
   <div class="toast" id="toast"></div>
@@ -223,6 +235,9 @@ async function refresh() {
     ['全局快捷键', info.shortcut],
     ['软件渲染', info.softwareRendering ? '开' : '关（GPU 加速）'],
     ['工作区窗口', String(info.workspaceCount ?? 0)],
+    ['运行时长', fmtDuration(info.stability && info.stability.uptimeMs)],
+    ['自动重连', String((info.stability && info.stability.reconnects) || 0)],
+    ['GPU 降级', String((info.stability && info.stability.gpuFallbacks) || 0)],
     ['当前 HOME', info.home || process.env.HOME || ''],
     ['服务托管', info.useSystemdService ? 'systemd 用户服务' : info.externalService ? '外部服务 ' + info.port : '客户端子进程'],
     ['界面动效', info.motionMode === 'always' ? '始终暂停' : info.motionMode === 'blur' ? '仅失焦暂停' : info.motionMode === 'auto' ? '自动（失焦/空闲暂停）' : '正常'],
@@ -242,7 +257,7 @@ $('copy').addEventListener('click', async () => {
   catch (err) { toast('复制失败：' + err.message) }
 })
 $('refresh').addEventListener('click', () => refresh().then(() => toast('已刷新')))
-for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['export-sessions','export-sessions'],['export-markdown','export-markdown'],['rollback-shell','rollback-shell'],['rollback-dsh','rollback-dsh'],['systemd-enable','systemd-enable'],['systemd-disable','systemd-disable'],['fix-owner','fix-owner'],['switch-dev-service','switch-dev-service'],['switch-test-service','switch-test-service'],['root-service-start','root-service-start'],['root-service-stop','root-service-stop'],['clear-cache','clear-cache']]) {
+for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['export-sessions','export-sessions'],['export-markdown','export-markdown'],['rollback-shell','rollback-shell'],['rollback-dsh','rollback-dsh'],['systemd-enable','systemd-enable'],['systemd-disable','systemd-disable'],['fix-owner','fix-owner'],['close-workspaces','close-workspaces'],['stability-report','stability-report'],['switch-dev-service','switch-dev-service'],['switch-test-service','switch-test-service'],['root-service-start','root-service-start'],['root-service-stop','root-service-stop'],['clear-cache','clear-cache']]) {
   $(id).addEventListener('click', async () => {
     try { const res = await window.dshUtility.invoke('diagnostics:action', { action }); toast(res.message || '完成') }
     catch (err) { toast('操作失败：' + err.message) }
