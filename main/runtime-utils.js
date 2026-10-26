@@ -130,6 +130,23 @@ function sessionNotifyDecision(prev, next, focused, opts = {}) {
   return null
 }
 
+/**
+ * 规范化 npm registry 地址；非法值回退到官方源。
+ */
+function normalizeRegistry(value) {
+  const fallback = 'https://registry.npmjs.org/'
+  if (typeof value !== 'string') return fallback
+  const trimmed = value.trim()
+  if (!trimmed) return fallback
+  try {
+    const url = new URL(trimmed)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return fallback
+    return url.href.endsWith('/') ? url.href : `${url.href}/`
+  } catch {
+    return fallback
+  }
+}
+
 module.exports = {
   readTail,
   redact,
@@ -141,4 +158,5 @@ module.exports = {
   resolveMotionMode,
   shouldPauseMotion,
   sessionNotifyDecision,
+  normalizeRegistry,
 }

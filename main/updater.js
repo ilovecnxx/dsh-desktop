@@ -10,7 +10,7 @@ const { spawn, execFile } = require('node:child_process')
 const fs = require('node:fs')
 const https = require('node:https')
 
-const REGISTRY = 'https://registry.npmjs.org/'
+let registry = 'https://registry.npmjs.org/'
 const UPDATE_HELPER = '/usr/local/sbin/dsh-update'
 const DSH_PACKAGE = '@deepseek-ai/dsh'
 const CODEX_PLUGIN = '@deepseek-ai/dsh-subagent-codex'
@@ -67,7 +67,7 @@ function compareVersions(a, b) {
 function fetchPackument(name, timeoutMs = 20000) {
   const cached = packumentCache.get(name)
   if (cached && Date.now() - cached.at < CACHE_TTL) return Promise.resolve(cached.data)
-  const url = REGISTRY + name.replace('/', '%2F')
+  const url = registry + name.replace('/', '%2F')
   return new Promise((resolve, reject) => {
     const req = https.get(
       url,
@@ -224,7 +224,16 @@ async function syncProfilePlugin({ version, dshBin, dshHome, profile }) {
   return { ok: result.code === 0, output: output.slice(-2000) }
 }
 
+/** 设置 npm registry（主进程启动/设置变更时调用）。 */
+function setRegistry(value) {
+  if (typeof value === 'string' && /^https?:\/\//.test(value)) {
+    registry = value.endsWith('/') ? value : `${value}/`
+    packumentCache.clear()
+  }
+}
+
 module.exports = {
+  setRegistry,
   checkForUpdate,
   compareVersions,
   parseVersion,

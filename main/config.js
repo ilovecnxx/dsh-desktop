@@ -10,6 +10,8 @@ const path = require('node:path')
 const DEFAULT_CONFIG = {
   channel: 'next', // 'next' | 'latest'
   autoCheck: true,
+  // npm registry 镜像（国内可改为 https://registry.npmmirror.com/）
+  registry: 'https://registry.npmjs.org/',
   checkIntervalMs: 6 * 60 * 60 * 1000,
   closeToTray: true,
   // 关闭窗口行为：tray 收进托盘 / quit 退出客户端保留服务 / quit-all 彻底退出

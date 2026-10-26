@@ -13,6 +13,7 @@ const {
   resolveMotionMode,
   shouldPauseMotion,
   sessionNotifyDecision,
+  normalizeRegistry,
 } = require('../main/runtime-utils')
 const shellUpdater = require('../main/shell-updater')
 
@@ -173,4 +174,12 @@ test('sessionNotifyDecision notifies finish/approval only when unfocused', () =>
   // 可关闭
   assert.equal(sessionNotifyDecision({ running: true, dialogs: 0 }, base, false, { finishEnabled: false }), null)
   assert.equal(sessionNotifyDecision(base, { running: true, dialogs: 1 }, false, { approvalEnabled: false }), null)
+})
+
+test('normalizeRegistry accepts http(s) and normalizes trailing slash', () => {
+  assert.equal(normalizeRegistry('https://registry.npmmirror.com'), 'https://registry.npmmirror.com/')
+  assert.equal(normalizeRegistry(' https://registry.npmjs.org/ '), 'https://registry.npmjs.org/')
+  assert.equal(normalizeRegistry('ftp://example.com'), 'https://registry.npmjs.org/')
+  assert.equal(normalizeRegistry('not a url'), 'https://registry.npmjs.org/')
+  assert.equal(normalizeRegistry(undefined), 'https://registry.npmjs.org/')
 })

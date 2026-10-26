@@ -73,6 +73,10 @@ function settingsHtml() {
   <div class="row"><div><div class="label">更新通道</div><div class="hint">next 跟随预发布，latest 只跟稳定版</div></div>
     <select id="channel"><option value="next">next（预发布）</option><option value="latest">latest（稳定）</option></select></div>
   <div class="row"><div><div class="label">自动检查 dsh 更新</div></div><input type="checkbox" id="autoCheck"></div>
+  <div class="row"><div><div class="label">自动检查间隔</div></div>
+    <select id="checkIntervalMs"><option value="21600000">6 小时</option><option value="43200000">12 小时</option><option value="86400000">24 小时</option></select></div>
+  <div class="row"><div><div class="label">npm 镜像源</div><div class="hint">国内可填 https://registry.npmmirror.com/</div></div>
+    <input type="text" id="registry" style="min-width:270px"></div>
   <div class="row"><div><div class="label">自动检查客户端更新</div></div><input type="checkbox" id="shellAutoCheck"></div>
   <div class="row"><div><div class="label">服务异常时自动重启</div></div><input type="checkbox" id="autoRestartService"></div>
   <div class="row"><div><div class="label">健康检查间隔</div></div>
@@ -110,6 +114,8 @@ async function refresh() {
   const state = await window.dshUtility.invoke('settings:get')
   $('channel').value = state.config.channel
   $('autoCheck').checked = !!state.config.autoCheck
+  $('checkIntervalMs').value = String(state.config.checkIntervalMs || 21600000)
+  $('registry').value = state.config.registry || 'https://registry.npmjs.org/'
   $('shellAutoCheck').checked = !!state.config.shellAutoCheck
   $('autoRestartService').checked = !!state.config.autoRestartService
   $('closeAction').value = state.config.closeAction || 'tray'
@@ -131,6 +137,8 @@ $('save').addEventListener('click', async () => {
     await window.dshUtility.invoke('settings:set', {
       channel: $('channel').value,
       autoCheck: $('autoCheck').checked,
+      checkIntervalMs: Number($('checkIntervalMs').value),
+      registry: $('registry').value.trim(),
       shellAutoCheck: $('shellAutoCheck').checked,
       autoRestartService: $('autoRestartService').checked,
       closeAction: $('closeAction').value,
@@ -176,6 +184,8 @@ function diagnosticsHtml() {
     <button id="check-shell">检查客户端更新</button>
     <button id="restart">重启服务</button>
     <button id="open-logs">打开日志目录</button>
+    <button id="export-diag">导出诊断包</button>
+    <button id="clear-cache">清理缓存</button>
   </div>
   <div class="toast" id="toast"></div>
 </div>
@@ -209,7 +219,7 @@ $('copy').addEventListener('click', async () => {
   catch (err) { toast('复制失败：' + err.message) }
 })
 $('refresh').addEventListener('click', () => refresh().then(() => toast('已刷新')))
-for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs']]) {
+for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['clear-cache','clear-cache']]) {
   $(id).addEventListener('click', async () => {
     try { const res = await window.dshUtility.invoke('diagnostics:action', { action }); toast(res.message || '完成') }
     catch (err) { toast('操作失败：' + err.message) }

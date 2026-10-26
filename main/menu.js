@@ -88,6 +88,7 @@ function buildApplicationMenu(ctx) {
           click: () => ctx.openExternal('https://github.com/deepseek-ai/deepseek-harness/issues'),
         },
         { type: 'separator' },
+        { label: '查看 dsh 更新说明', click: () => ctx.openExternal('https://github.com/deepseek-ai/deepseek-harness/releases') },
         { label: '诊断信息…', click: () => ctx.openDiagnostics() },
       ],
     },

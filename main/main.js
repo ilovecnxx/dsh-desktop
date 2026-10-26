@@ -8,8 +8,9 @@
  * - 原生窗口 / 系统托盘 / 应用菜单
  * - 检查 npm 上的新版本，通过免密助手一键升级并自动重启
  */
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, shell, Notification, globalShortcut, clipboard } = require('electron')
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, shell, Notification, globalShortcut, clipboard, screen } = require('electron')
 const fs = require('node:fs')
+const { execFileSync } = require('node:child_process')
 const os = require('node:os')
 const path = require('node:path')
 
@@ -26,6 +27,7 @@ const {
   resolveMotionMode,
   shouldPauseMotion,
   sessionNotifyDecision,
+  normalizeRegistry,
 } = require('./runtime-utils')
 const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
@@ -255,8 +257,28 @@ async function choosePort(preferred) {
 
 /* ---------------------------------------------------------------- 窗口 */
 
+function sanitizeWindowBounds(saved) {
+  if (!saved || typeof saved.width !== 'number' || typeof saved.height !== 'number') return {}
+  try {
+    const displays = screen.getAllDisplays()
+    const visible = displays.some(({ workArea }) => {
+      const x = Number.isFinite(saved.x) ? saved.x : workArea.x
+      const y = Number.isFinite(saved.y) ? saved.y : workArea.y
+      return (
+        x < workArea.x + workArea.width &&
+        x + saved.width > workArea.x &&
+        y < workArea.y + workArea.height &&
+        y + saved.height > workArea.y
+      )
+    })
+    return visible ? saved : {}
+  } catch {
+    return saved
+  }
+}
+
 function createWindow() {
-  const saved = config.get('windowBounds') || {}
+  const saved = sanitizeWindowBounds(config.get('windowBounds'))
   win = new BrowserWindow({
     width: saved.width || 1280,
     height: saved.height || 880,
@@ -1106,6 +1128,8 @@ function settingsSnapshot() {
     config: {
       channel: config.get('channel'),
       autoCheck: Boolean(config.get('autoCheck')),
+      checkIntervalMs: Number(config.get('checkIntervalMs') || 6 * 60 * 60 * 1000),
+      registry: config.get('registry') || 'https://registry.npmjs.org/',
       shellAutoCheck: Boolean(config.get('shellAutoCheck')),
       autoRestartService: Boolean(config.get('autoRestartService')),
       closeToTray: Boolean(config.get('closeToTray')),
@@ -1117,7 +1141,6 @@ function settingsSnapshot() {
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
       useX11: config.get('useX11') !== false,
       softwareRendering: Boolean(config.get('softwareRendering')),
-    motionMode: resolveMotionMode(config.get('motionMode')),
     },
     autostart: autostartEnabled(),
     globalShortcut: config.get('globalShortcut'),
@@ -1133,6 +1156,14 @@ function applySettingsPatch(patch) {
   const merged = { ...previous.config, ...patch }
   config.set('channel', merged.channel === 'latest' ? 'latest' : 'next')
   config.set('autoCheck', Boolean(merged.autoCheck))
+  config.set(
+    'checkIntervalMs',
+    Math.max(60 * 60 * 1000, Number(merged.checkIntervalMs) || 6 * 60 * 60 * 1000),
+  )
+  const registry = normalizeRegistry(merged.registry)
+  config.set('registry', registry)
+  updater.setRegistry(registry)
+  restartAutoCheck()
   config.set('shellAutoCheck', Boolean(merged.shellAutoCheck))
   config.set('autoRestartService', Boolean(merged.autoRestartService))
   const closeAction = resolveCloseAction(merged.closeAction, merged.closeToTray)
@@ -1163,6 +1194,56 @@ function applySettingsPatch(patch) {
   log('设置已更新')
   refreshMenus()
   return settingsSnapshot()
+}
+
+async function exportDiagnosticsBundle() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const defaultPath = path.join(app.getPath('downloads'), `dsh-desktop-diagnostics-${stamp}.tar.gz`)
+  const picked = await dialog.showSaveDialog(win, {
+    title: '导出诊断包',
+    defaultPath,
+    filters: [{ name: 'tar.gz 压缩包', extensions: ['tar.gz'] }],
+  })
+  if (picked.canceled || !picked.filePath) return { message: '已取消' }
+  const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-diag-'))
+  try {
+    fs.writeFileSync(path.join(stage, 'diagnostics.json'), JSON.stringify(buildDiagnostics(), null, 2))
+    for (const file of ['config.json', 'main.log', 'server.log', 'rollout.log']) {
+      const src = path.join(USER_DATA, file)
+      if (fs.existsSync(src)) fs.copyFileSync(src, path.join(stage, file))
+    }
+    execFileSync('tar', ['-czf', picked.filePath, '-C', stage, '.'], { timeout: 20000 })
+    log(`已导出诊断包 ${picked.filePath}`)
+    return { message: `已导出诊断包：${picked.filePath}` }
+  } catch (err) {
+    log(`导出诊断包失败: ${err.message}`)
+    throw err
+  } finally {
+    fs.rmSync(stage, { recursive: true, force: true })
+  }
+}
+
+function clearClientCache() {
+  const dirs = [
+    'Cache',
+    'Code Cache',
+    'GPUCache',
+    'DawnGraphiteCache',
+    'DawnWebGPUCache',
+    'GrShaderCache',
+    'ShaderCache',
+  ]
+  let removed = 0
+  for (const name of dirs) {
+    try {
+      fs.rmSync(path.join(USER_DATA, name), { recursive: true, force: true })
+      removed++
+    } catch {
+      // ignore
+    }
+  }
+  log(`已清理客户端缓存目录 ${removed} 个`)
+  return { message: `已清理 ${removed} 个缓存目录，重启客户端后完全生效` }
 }
 
 async function handleUtilityAction(payload) {
@@ -1206,6 +1287,10 @@ async function handleUtilityAction(payload) {
     case 'open-logs':
       await shell.openPath(USER_DATA)
       return { message: '已打开日志目录' }
+    case 'export-diagnostics':
+      return exportDiagnosticsBundle()
+    case 'clear-cache':
+      return clearClientCache()
     default:
       throw new Error(`未知操作: ${action}`)
   }
@@ -1491,6 +1576,12 @@ function registerIpc() {
   )
 }
 
+function restartAutoCheck() {
+  if (autoCheckTimer) clearTimeout(autoCheckTimer)
+  autoCheckTimer = null
+  startAutoCheck()
+}
+
 function startAutoCheck() {
   if (autoCheckTimer) clearTimeout(autoCheckTimer)
   if (quitting) return
@@ -1557,6 +1648,7 @@ function startSessionWatcher() {
 
 async function bootstrap() {
   config = new Config(USER_DATA)
+  updater.setRegistry(normalizeRegistry(config.get('registry')))
   rotateIfNeeded(MAIN_LOG, MAIN_LOG_MAX_BYTES)
   app.on('child-process-gone', (_event, details) => {
     if (details && details.type === 'GPU') {
