@@ -15,6 +15,7 @@ const { promisify } = require('node:util')
 const execFileAsync = promisify(execFile)
 const os = require('node:os')
 const https = require('node:https')
+const net = require('node:net')
 const path = require('node:path')
 
 const { Config } = require('./config')
@@ -1909,7 +1910,57 @@ async function exportLatestSessionMarkdown() {
   return { message: `已导出会话 Markdown：${picked.filePath}` }
 }
 
+function portOpen(port, timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port }, () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.setTimeout(timeoutMs, () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.on('error', () => resolve(false))
+  })
+}
+
+async function ensureTargetService(port) {
+  if (await portOpen(port)) return true
+  if (port === 3080) {
+    log('启动开发服务 dsh-web-session.service')
+    try {
+      execFileSync('systemctl', ['--user', 'start', 'dsh-web-session.service'], {
+        timeout: 20000,
+        env: { ...process.env },
+      })
+    } catch (err) {
+      log(`启动开发服务失败: ${err.message}`)
+    }
+  } else if (port === 3081) {
+    log('启动 root 测试服务 dsh-web-root.service（需要密码授权）')
+    try {
+      execFileSync('pkexec', ['systemctl', 'start', 'dsh-web-root.service'], {
+        timeout: 120000,
+      })
+    } catch (err) {
+      log(`启动 root 服务失败: ${err.message}`)
+    }
+  }
+  const deadline = Date.now() + 25000
+  while (Date.now() < deadline) {
+    if (await portOpen(port)) return true
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  return false
+}
+
 async function switchService(port, label) {
+  const ready = await ensureTargetService(port)
+  if (!ready) {
+    return {
+      message: `目标服务 ${label}（127.0.0.1:${port}）启动失败，请检查 systemctl 状态或稍后重试`,
+    }
+  }
   config.set('port', Number(port))
   config.set('externalService', true)
   config.set('useSystemdService', false)
