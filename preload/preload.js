@@ -133,52 +133,10 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 })
 
-// ---- 文件拖拽上传增强（显示提示层，避免拖入文件时页面跳转）----
+// ---- 拖拽诊断（不拦截，交给 dsh 原生拖拽附件）----
+// dsh 前端自带「文件或图片拖动到此处」提示层（backdrop blur）。客户端不再
+// preventDefault / stopPropagation，避免其拖拽状态无法复位导致模糊层残留。
 const DROP_OVERLAY_ID = 'dsh-desktop-drop-overlay'
-let dragDepth = 0
-let dropOverlayTimer = null
-
-function hasFiles(event) {
-  const types = event.dataTransfer && event.dataTransfer.types
-  if (!types) return false
-  return (
-    Array.prototype.includes.call(types, 'Files') ||
-    Array.prototype.includes.call(types, 'text/uri-list')
-  )
-}
-
-function showDropOverlay() {
-  if (document.getElementById(DROP_OVERLAY_ID) || !document.documentElement) return
-  const host = document.createElement('div')
-  host.id = DROP_OVERLAY_ID
-  const shadow = host.attachShadow({ mode: 'closed' })
-  shadow.innerHTML = `
-    <style>
-      :host { all: initial; }
-      .overlay {
-        position: fixed; inset: 0; z-index: 2147483646;
-        background: rgba(10, 11, 14, 0.72); display: grid; place-items: center;
-        font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; color: #e8e8ea;
-        border: 2px dashed #4f6ef7; pointer-events: none;
-      }
-      .box { text-align: center; }
-      .title { font-weight: 600; font-size: 17px; }
-      .hint { color: #9a9ca6; font-size: 12px; margin-top: 4px; }
-    </style>
-    <div class="overlay"><div class="box">
-      <div class="title">松开鼠标上传文件</div>
-      <div class="hint">文件会作为附件发送到当前会话</div>
-    </div></div>`
-  document.documentElement.appendChild(host)
-}
-
-function hideDropOverlay() {
-  if (dropOverlayTimer) {
-    clearTimeout(dropOverlayTimer)
-    dropOverlayTimer = null
-  }
-  document.getElementById(DROP_OVERLAY_ID)?.remove()
-}
 
 function isFullscreenBlurMask(el) {
   try {
@@ -202,7 +160,6 @@ function collectDropDiagnostics() {
       cls: String(el.getAttribute('class') || '').slice(0, 120),
       role: el.getAttribute('role') || '',
       backdropFilter: getComputedStyle(el).backdropFilter,
-      filter: getComputedStyle(el).filter,
       rect: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)],
       text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
     })
@@ -216,62 +173,20 @@ function collectDropDiagnostics() {
   }
 }
 
-/** 兜底：拖拽事件序列不完整时（如图片 drop 的 types 不含 Files），1.5 秒后自动收起 */
-function scheduleOverlayHide(ms = 1500) {
-  if (dropOverlayTimer) clearTimeout(dropOverlayTimer)
-  dropOverlayTimer = setTimeout(() => {
-    dragDepth = 0
-    hideDropOverlay()
-  }, ms)
-}
-
-window.addEventListener(
-  'dragenter',
-  (event) => {
-    // 只要可能带文件就显示提示层；图片/浏览器拖拽的 types 不一定稳定
-    if (!hasFiles(event)) return
-    dragDepth += 1
-    showDropOverlay()
-    scheduleOverlayHide()
-  },
-  true,
-)
-window.addEventListener(
-  'dragleave',
-  (event) => {
-    if (!hasFiles(event)) return
-    dragDepth = Math.max(0, dragDepth - 1)
-    if (dragDepth === 0) hideDropOverlay()
-    else scheduleOverlayHide(800)
-  },
-  true,
-)
-window.addEventListener(
-  'dragover',
-  (event) => {
-    if (!hasFiles(event)) return
-    // 阻止 Electron 默认打开拖入的文件；页面自己的 drop 处理器仍会收到事件
-    event.preventDefault()
-    scheduleOverlayHide()
-  },
-  true,
-)
+// 仅观察和记录，不改变事件默认行为
 window.addEventListener(
   'drop',
-  (event) => {
-    // 先无条件收起遮罩：图片拖拽的 drop types 可能不再包含 Files
-    dragDepth = 0
-    hideDropOverlay()
-    if (!hasFiles(event)) return
-    event.preventDefault()
+  () => {
+    setTimeout(() => {
+      try {
+        ipcRenderer.send('dsh:drop-diagnostics', collectDropDiagnostics())
+      } catch {
+        // ignore
+      }
+    }, 800)
   },
   true,
 )
-window.addEventListener('dragend', hideDropOverlay, true)
-window.addEventListener('blur', hideDropOverlay)
-window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') hideDropOverlay()
-}, true)
 
 // ---- 拖拽/粘贴文件与长文本转文件（CODEX 风格）----
 let pasteConfig = { enabled: true, threshold: 6000 }
@@ -379,84 +294,6 @@ function insertTextIntoComposer(text) {
   return true
 }
 
-async function handleDroppedFiles(files) {
-  const paths = []
-  const blobs = []
-  for (const file of files) {
-    let filePath = ''
-    try {
-      filePath = webUtils.getPathForFile(file) || ''
-    } catch {
-      filePath = ''
-    }
-    if (filePath) paths.push(filePath)
-    else if (file.size <= 20 * 1024 * 1024) blobs.push(file)
-  }
-  if (paths.length) {
-    try {
-      const result = await ipcRenderer.invoke('dsh:open-dropped', { paths })
-      if (result && result.folder) {
-        showToast(`已在新窗口打开工作区：${result.folder}`)
-        return true
-      }
-      if (result && Array.isArray(result.files) && result.files.length) {
-        return insertTextIntoComposer(result.files.join('\n'))
-      }
-    } catch (err) {
-      showToast(`处理拖入内容失败：${err.message}`)
-    }
-  }
-  const saved = []
-  for (const file of blobs) {
-    try {
-      const data = new Uint8Array(await file.arrayBuffer())
-      const result = await ipcRenderer.invoke('dsh:save-pasted-file', {
-        name: file.name,
-        type: file.type,
-        data,
-      })
-      if (result && result.path) saved.push(result.path)
-    } catch {
-      // ignore
-    }
-  }
-  if (!saved.length) return false
-  return insertTextIntoComposer(saved.join('\n'))
-}
-
-// 拖入文件/图片：插入真实路径（页面没有附件上传接口，路径可直接被 dsh 工具读取）
-window.addEventListener(
-  'drop',
-  (event) => {
-    dragDepth = 0
-    hideDropOverlay()
-    if (!hasFiles(event)) return
-    event.preventDefault()
-    event.stopImmediatePropagation()
-    const files = [...(event.dataTransfer?.files || [])]
-    if (!files.length) return
-    handleDroppedFiles(files)
-      .then((ok) => {
-        if (ok) showToast(`已处理 ${files.length} 个文件/文件夹`)
-      })
-      .finally(() => hideDropOverlay())
-    // 拖拽后诊断 + 自动关闭 dsh 的全屏模糊遮罩（图片预览弹层）
-    setTimeout(() => {
-      const diag = collectDropDiagnostics()
-      try {
-        ipcRenderer.send('dsh:drop-diagnostics', diag)
-      } catch {
-        // ignore
-      }
-      if (diag.masks.length > 0 && !diag.overlay) {
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-        showToast('已自动关闭拖拽后残留的模糊弹层')
-      }
-    }, 600)
-  },
-  true,
-)
-
 // 粘贴：文件/图片保存后插入路径；超长文本保存为 txt 再插入路径
 window.addEventListener(
   'paste',
@@ -464,16 +301,9 @@ window.addEventListener(
     if (!pasteConfig.enabled) return
     const data = event.clipboardData
     if (!data) return
+    // 图片/文件粘贴交给 dsh 原生附件处理；这里只处理超长文本
     const fileItems = [...(data.items || [])].filter((item) => item.kind === 'file')
-    if (fileItems.length) {
-      const files = fileItems.map((item) => item.getAsFile()).filter(Boolean)
-      if (!files.length) return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      const ok = await handleDroppedFiles(files)
-      if (ok) showToast(`已处理 ${files.length} 个图片/文件`)
-      return
-    }
+    if (fileItems.length) return
     const text = data.getData('text/plain') || ''
     if (!text || text.length < pasteConfig.threshold) return
     event.preventDefault()
