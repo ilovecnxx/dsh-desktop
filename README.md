@@ -196,6 +196,7 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 ## 版本与优化记录
 
 - 1.4.10：外部服务模式下自动拉起用户服务，避免启动卡 90 秒；详见 [OPTIMIZATION-1.4.10.md](OPTIMIZATION-1.4.10.md)
+- 1.5.6：现代化文字/代码/命令行配色、设置窗口改版；详见 [OPTIMIZATION-1.5.6.md](OPTIMIZATION-1.5.6.md)
 - 1.5.5：状态胶囊、界面缩放与全屏、设置项优化；详见 [OPTIMIZATION-1.5.5.md](OPTIMIZATION-1.5.5.md)
 - 1.5.4：修复 root 模式会话「未分组」、统一服务 WorkingDirectory；详见 [OPTIMIZATION-1.5.4.md](OPTIMIZATION-1.5.4.md)
 - 1.5.3：日志轮转/缓存清理、owner-sync 模式控制、root 自动启动；详见 [OPTIMIZATION-1.5.3.md](OPTIMIZATION-1.5.3.md)

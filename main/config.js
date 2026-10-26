@@ -64,6 +64,8 @@ const DEFAULT_CONFIG = {
   showStatusPill: true,
   // 界面缩放（1 = 100%）
   uiZoom: 1,
+  // 界面主题：modern 现代 / contrast 高对比 / soft 柔和 / off 关闭
+  uiTheme: 'modern',
   notifyOnApproval: true,
   // 自动模式下，窗口聚焦但空闲超过该时长也暂停循环动画
   motionIdleMs: 90 * 1000,

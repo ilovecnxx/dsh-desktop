@@ -411,6 +411,7 @@ function createWindow() {
         autoHideStaleRunning: config.get('autoHideStaleRunning') !== false,
       autoCollapseCompletedTasks: config.get('autoCollapseCompletedTasks') !== false,
       showStatusPill: config.get('showStatusPill') !== false,
+      uiTheme: config.get('uiTheme') || 'modern',
       uiZoom: clampZoom(config.get('uiZoom')),
         autoCollapseCompletedTasks: config.get('autoCollapseCompletedTasks') !== false,
       })
@@ -1713,6 +1714,12 @@ function applySettingsPatch(patch) {
       Math.max(500, Math.min(200000, Number(merged.pasteToFileThreshold) || 6000)),
     )
   }
+  if (merged.uiTheme !== undefined) {
+    config.set('uiTheme', String(merged.uiTheme))
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('dsh-desktop:ui-theme', String(merged.uiTheme))
+    }
+  }
   if (merged.showStatusPill !== undefined) {
     config.set('showStatusPill', Boolean(merged.showStatusPill))
     sendShellStatus()
@@ -2821,6 +2828,7 @@ function registerIpc() {
     return {
       autoHideStaleRunning: config.get('autoHideStaleRunning') !== false,
       autoCollapseCompletedTasks: config.get('autoCollapseCompletedTasks') !== false,
+      uiTheme: config.get('uiTheme') || 'modern',
     }
   })
   ipcMain.handle('dsh:get-paste-config', (event) => {

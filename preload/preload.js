@@ -495,3 +495,110 @@ ipcRenderer
   .invoke('dsh:shell-status')
   .then((status) => renderStatusPill(status))
   .catch(() => {})
+
+// ---- 界面主题：增强聊天文字、代码/命令行块的对比度与配色 ----
+const UI_THEME_STYLE_ID = 'dsh-desktop-ui-theme'
+const UI_THEMES = {
+  modern: `
+    pre, [class*="codeBlock"], [class*="code-block"] {
+      background: #0e1118 !important;
+      border: 1px solid #2b3140 !important;
+      border-left: 3px solid #5b7cfa !important;
+      border-radius: 10px !important;
+      color: #d9deea !important;
+      box-shadow: 0 8px 24px rgba(0,0,0,.28);
+    }
+    pre code { color: inherit !important; background: transparent !important; }
+    :not(pre) > code {
+      background: #232938 !important;
+      border: 1px solid #343c50 !important;
+      color: #9ec5ff !important;
+      border-radius: 6px !important;
+      padding: 1px 6px !important;
+    }
+    blockquote {
+      border-left: 3px solid #5b7cfa !important;
+      background: rgba(91,124,250,.10) !important;
+      border-radius: 0 8px 8px 0 !important;
+      color: #c7ccd9 !important;
+    }
+    a { color: #85a8ff !important; }
+    strong { color: #f4f6fb !important; }
+    th { background: #1a1f2b !important; color: #e8ecf6 !important; }
+    td, th { border-color: #2b3140 !important; }
+    hr { border-color: #2b3140 !important; }
+    ::selection { background: rgba(91,124,250,.38) !important; }
+    * { scrollbar-width: thin; scrollbar-color: #3b4254 transparent; }
+    *::-webkit-scrollbar { width: 9px; height: 9px; }
+    *::-webkit-scrollbar-thumb { background: #3b4254; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+    *::-webkit-scrollbar-track { background: transparent; }
+
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: #c792ea !important; }
+    .hljs-string, .hljs-regexp, .hljs-addition { color: #a5e075 !important; }
+    .hljs-comment, .hljs-quote { color: #7f869c !important; font-style: italic; }
+    .hljs-number, .hljs-symbol { color: #f78c6c !important; }
+    .hljs-title, .hljs-function, .hljs-title.function_ { color: #82aaff !important; }
+    .hljs-built_in, .hljs-attr, .hljs-attribute { color: #ffcb6b !important; }
+    .hljs-variable, .hljs-template-variable, .hljs-deletion { color: #f07178 !important; }
+    .hljs-type, .hljs-class .hljs-title { color: #89ddff !important; }
+    .hljs-meta, .hljs-doctag { color: #8b9bb8 !important; }
+    kbd { background: #232938; border: 1px solid #3a4358; border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; color: #dbe2f2; font: 11px ui-monospace, monospace; }
+  `,
+  contrast: `
+    pre, [class*="codeBlock"], [class*="code-block"] {
+      background: #05070c !important; border: 1px solid #4b556e !important;
+      border-left: 4px solid #7aa2ff !important; border-radius: 8px !important;
+      color: #f5f8ff !important;
+    }
+    pre code { color: inherit !important; background: transparent !important; }
+    :not(pre) > code { background: #1d2434 !important; border: 1px solid #56617c !important; color: #b9d4ff !important; padding: 1px 6px !important; border-radius: 5px !important; }
+    body, [class*="message"], [class*="content"] { color: #eef2fb !important; }
+    a { color: #9dc0ff !important; text-decoration: underline !important; }
+    blockquote { border-left: 4px solid #7aa2ff !important; background: rgba(122,162,255,.14) !important; color: #e6ecfa !important; }
+    ::selection { background: #2f5bd0 !important; color: #fff !important; }
+    th { background: #111827 !important; color: #fff !important; }
+    td, th { border-color: #4b556e !important; }
+
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: #d7a6ff !important; }
+    .hljs-string, .hljs-regexp, .hljs-addition { color: #b8f08a !important; }
+    .hljs-comment, .hljs-quote { color: #9aa4bd !important; font-style: italic; }
+    .hljs-number, .hljs-symbol { color: #ffab8a !important; }
+    .hljs-title, .hljs-function, .hljs-title.function_ { color: #82aaff !important; }
+    .hljs-built_in, .hljs-attr, .hljs-attribute { color: #ffcb6b !important; }
+    .hljs-variable, .hljs-template-variable, .hljs-deletion { color: #f07178 !important; }
+    .hljs-type, .hljs-class .hljs-title { color: #89ddff !important; }
+    .hljs-meta, .hljs-doctag { color: #8b9bb8 !important; }
+    kbd { background: #232938; border: 1px solid #3a4358; border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; color: #dbe2f2; font: 11px ui-monospace, monospace; }
+  `,
+  soft: `
+    pre, [class*="codeBlock"], [class*="code-block"] {
+      background: #171a21 !important; border: 1px solid #2a2e3a !important;
+      border-radius: 10px !important; color: #cfd4df !important;
+    }
+    :not(pre) > code { background: #20232c !important; color: #a9c4ff !important; border-radius: 5px !important; padding: 1px 5px !important; }
+    blockquote { border-left: 2px solid #3f4a67 !important; background: rgba(255,255,255,.03) !important; }
+    ::selection { background: rgba(120,140,200,.28) !important; }
+  `,
+}
+
+let currentUiTheme = 'modern'
+
+function applyUiTheme(theme) {
+  currentUiTheme = typeof theme === 'string' && theme ? theme : 'modern'
+  document.getElementById(UI_THEME_STYLE_ID)?.remove()
+  const css = UI_THEMES[currentUiTheme]
+  if (!css || !document.documentElement) return
+  const style = document.createElement('style')
+  style.id = UI_THEME_STYLE_ID
+  style.textContent = css
+  document.documentElement.appendChild(style)
+}
+
+if (document.documentElement) applyUiTheme(currentUiTheme)
+ipcRenderer.on('dsh-desktop:ui-theme', (_event, theme) => applyUiTheme(theme))
+ipcRenderer
+  .invoke('dsh:get-ui-config')
+  .then((cfg) => {
+    if (cfg && cfg.uiTheme) applyUiTheme(cfg.uiTheme)
+  })
+  .catch(() => {})

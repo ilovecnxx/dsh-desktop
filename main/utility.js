@@ -35,34 +35,54 @@ function createUtilityWindow({ title, width, height, html }) {
 }
 
 const BASE_CSS = `
-  html,body{margin:0;height:100%;background:#151517;color:#e8e8ea;
-    font:13px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
-  .wrap{padding:20px 22px 18px;max-width:760px;margin:0 auto}
-  h1{font-size:16px;margin:0 0 4px;font-weight:600}
-  .sub{color:#9a9ca6;font-size:12px;margin-bottom:16px}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:
+    radial-gradient(1100px 520px at 15% -10%, #1c2333 0%, rgba(18,20,26,0) 60%),
+    radial-gradient(900px 480px at 110% 0%, #1a2436 0%, rgba(14,16,21,0) 55%),
+    #0f1117;color:#e9ecf3;
+    font:13px/1.65 system-ui,-apple-system,"Segoe UI","Noto Sans CJK SC",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{padding:26px 26px 92px;max-width:820px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px;font-weight:650;letter-spacing:.2px;
+    background:linear-gradient(90deg,#f3f6ff,#9db4ff 70%,#b39dff);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#9aa1b4;font-size:12px;margin-bottom:18px}
   .row{display:flex;align-items:center;justify-content:space-between;gap:16px;
-    padding:9px 0;border-bottom:1px solid #23252b}
-  .row:last-of-type{border-bottom:0}
-  .label{color:#e8e8ea}
-  .hint{color:#8a8d97;font-size:11px;margin-top:2px}
-  .value{color:#c7c9d3;font-size:12px}
-  select,input[type="text"]{background:#1c1d21;color:#e8e8ea;border:1px solid #34363d;
-    border-radius:7px;padding:5px 8px;font:inherit;min-width:120px}
-  input[type="checkbox"]{width:16px;height:16px;accent-color:#4f6ef7}
-  .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
-  button{background:#2a2c33;color:#d8dae2;border:0;border-radius:8px;
-    padding:8px 13px;font:inherit;font-size:12px;cursor:pointer}
-  button:hover{background:#33363f}
-  button.primary{background:#4f6ef7;color:#fff;font-weight:600}
-  button.primary:hover{background:#5b79ff}
-  .toast{margin-top:12px;color:#7c9bff;font-size:12px;min-height:18px}
-  pre{background:#101114;border:1px solid #23252b;border-radius:8px;padding:10px;
-    font:11px/1.45 ui-monospace,monospace;color:#c7c9d3;white-space:pre-wrap;
-    word-break:break-all;max-height:220px;overflow:auto;margin:6px 0 0}
-  .grid{display:grid;grid-template-columns:120px 1fr;gap:4px 12px;font-size:12px}
-  .grid b{color:#9a9ca6;font-weight:500}
-  h2{font-size:13px;margin:18px 0 4px;color:#c7c9d3}
-`
+    padding:12px 14px;margin:8px 0;border:1px solid rgba(255,255,255,.065);
+    border-radius:12px;background:rgba(255,255,255,.028);transition:background .15s,border-color .15s}
+  .row:hover{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.11)}
+  .label{color:#eef1f8;font-weight:520}
+  .hint{color:#8f96a9;font-size:11px;margin-top:3px;line-height:1.5}
+  .value{color:#c9cfdd;font-size:12px}
+  select,input[type="text"]{background:#171b24;color:#eef1f8;border:1px solid #2f3749;
+    border-radius:9px;padding:7px 10px;font:inherit;min-width:132px;outline:none;transition:border-color .15s,box-shadow .15s}
+  select:focus,input[type="text"]:focus{border-color:#5b7cfa;box-shadow:0 0 0 3px rgba(91,124,250,.16)}
+  input[type="checkbox"]{width:17px;height:17px;accent-color:#5b7cfa;cursor:pointer}
+  .actions{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:9px;margin-top:20px;
+    padding:14px 0 12px;background:linear-gradient(180deg,rgba(15,17,23,0),rgba(15,17,23,.94) 40%);
+    backdrop-filter:blur(8px);z-index:5}
+  button{background:#232a38;color:#dce3f2;border:1px solid #313b4f;border-radius:9px;
+    padding:8px 14px;font:inherit;font-size:12px;font-weight:520;cursor:pointer;
+    transition:background .15s,border-color .15s,transform .05s}
+  button:hover{background:#2b3446;border-color:#40506e}
+  button:active{transform:translateY(1px)}
+  button.primary{background:linear-gradient(135deg,#5b7cfa,#8065ff);border-color:transparent;
+    color:#fff;box-shadow:0 8px 22px rgba(91,124,250,.28)}
+  button.primary:hover{filter:brightness(1.08)}
+  .toast{margin-top:12px;color:#9db4ff;font-size:12px;min-height:18px}
+  pre{background:#0a0d13;border:1px solid #252d3d;border-left:3px solid #5b7cfa;
+    border-radius:10px;padding:12px 14px;margin:10px 0;
+    font:11.5px/1.55 ui-monospace,"JetBrains Mono","Cascadia Code",monospace;color:#c9d3e6;
+    white-space:pre-wrap;word-break:break-word;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+  a{color:#85a8ff;text-decoration:none}
+  a:hover{text-decoration:underline}
+  ::selection{background:rgba(91,124,250,.38);color:#fff}
+  *{scrollbar-width:thin;scrollbar-color:#3b4356 transparent}
+  *::-webkit-scrollbar{width:9px;height:9px}
+  *::-webkit-scrollbar-thumb{background:#3b4356;border-radius:999px;border:2px solid transparent;background-clip:padding-box}
+  *::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb:hover{background:#4a5570}
+`;
 
 function settingsHtml() {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>${BASE_CSS}</style></head>
@@ -94,6 +114,7 @@ function settingsHtml() {
   <div class="row"><div><div class="label">转换阈值（字符）</div></div><input type="number" id="pasteToFileThreshold" min="500" max="200000" step="500"></div>
   <div class="row"><div><div class="label">工作区闲置回收（分钟）</div><div class="hint">窗口失焦超过该时长自动关闭并释放内存</div></div><input type="number" id="workspaceIdleMinutes" min="1" max="240" step="1"></div>
   <div class="row"><div><div class="label">显示状态胶囊</div><div class="hint">右下角显示模式/端口与快捷操作</div></div><input type="checkbox" id="showStatusPill"></div>
+  <div class="row"><div><div class="label">界面风格</div><div class="hint">增强聊天文字、代码/命令行块的对比度与配色</div></div><select id="uiTheme"><option value="modern">现代</option><option value="contrast">高对比</option><option value="soft">柔和</option><option value="off">关闭</option></select></div>
   <div class="row"><div><div class="label">界面缩放</div></div><select id="uiZoom"><option value="0.9">90%</option><option value="1">100%</option><option value="1.1">110%</option><option value="1.25">125%</option></select></div>
   <div class="row"><div><div class="label">全部完成后收起任务面板</div><div class="hint">启发式：仅隐藏明确显示“全部完成”的任务/待办面板</div></div><input type="checkbox" id="autoCollapseCompletedTasks"></div>
   <div class="row"><div><div class="label">自动隐藏运行中状态条</div><div class="hint">空闲时隐藏 dsh 前端残留的「任务运行中」条</div></div><input type="checkbox" id="autoHideStaleRunning"></div>
@@ -149,6 +170,7 @@ function refresh() {
   $('autoCollapseCompletedTasks').checked = state.config.autoCollapseCompletedTasks !== false
   $('showStatusPill').checked = state.config.showStatusPill !== false
   $('uiZoom').value = String(state.config.uiZoom || 1)
+  $('uiTheme').value = state.config.uiTheme || 'modern'
   $('globalShortcutEnabled').checked = !!state.config.globalShortcutEnabled
   $('autostart').checked = !!state.autostart
   $('healthIntervalMs').value = String(state.config.healthIntervalMs || 60000)
@@ -181,6 +203,7 @@ $('save').addEventListener('click', async () => {
       autoCollapseCompletedTasks: $('autoCollapseCompletedTasks').checked,
       showStatusPill: $('showStatusPill').checked,
       uiZoom: Number($('uiZoom').value),
+      uiTheme: $('uiTheme').value,
       globalShortcutEnabled: $('globalShortcutEnabled').checked,
       healthIntervalMs: Number($('healthIntervalMs').value),
       autostart: $('autostart').checked,
