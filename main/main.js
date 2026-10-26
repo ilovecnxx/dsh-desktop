@@ -2009,7 +2009,9 @@ async function switchService(port, label) {
   config.set('port', target)
   config.set('externalService', true)
   config.set('useSystemdService', false)
-  log(`已切换到${label}（127.0.0.1:${target}），自动重启客户端`)
+  // set() 是 200ms 防抖保存，而重启会在 150ms 内退出进程，必须同步落盘
+  config.save()
+  log(`已切换到${label}（127.0.0.1:${target}），自动重启客户端（配置已落盘）`)
   relaunchClient()
   return { message: `已切换到${label}，客户端会自动重启` }
 }
