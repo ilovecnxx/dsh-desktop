@@ -93,6 +93,7 @@ function settingsHtml() {
   <div class="row"><div><div class="label">长文本粘贴转文件</div><div class="hint">超过阈值的内容保存为 txt 文件并插入路径</div></div><input type="checkbox" id="pasteToFileEnabled"></div>
   <div class="row"><div><div class="label">转换阈值（字符）</div></div><input type="number" id="pasteToFileThreshold" min="500" max="200000" step="500"></div>
   <div class="row"><div><div class="label">工作区闲置回收（分钟）</div><div class="hint">窗口失焦超过该时长自动关闭并释放内存</div></div><input type="number" id="workspaceIdleMinutes" min="1" max="240" step="1"></div>
+  <div class="row"><div><div class="label">全部完成后收起任务面板</div><div class="hint">启发式：仅隐藏明确显示“全部完成”的任务/待办面板</div></div><input type="checkbox" id="autoCollapseCompletedTasks"></div>
   <div class="row"><div><div class="label">自动隐藏运行中状态条</div><div class="hint">空闲时隐藏 dsh 前端残留的「任务运行中」条</div></div><input type="checkbox" id="autoHideStaleRunning"></div>
   <div class="row"><div><div class="label">工作区实例上限</div><div class="hint">同时打开的工作区窗口数，超出按最旧自动关闭</div></div><input type="number" id="workspaceLimit" min="1" max="10" step="1"></div>
   <div class="row"><div><div class="label">以 root 运行服务（实验性）</div><div class="hint">需先运行 sudo bash scripts/setup-root.sh；会以 root 运行 dsh web</div></div><input type="checkbox" id="runServiceAsRoot"></div>
@@ -143,6 +144,7 @@ function refresh() {
   $('workspaceLimit').value = String(state.config.workspaceLimit || 3)
   $('workspaceIdleMinutes').value = String(state.config.workspaceIdleMinutes || 10)
   $('autoHideStaleRunning').checked = state.config.autoHideStaleRunning !== false
+  $('autoCollapseCompletedTasks').checked = state.config.autoCollapseCompletedTasks !== false
   $('globalShortcutEnabled').checked = !!state.config.globalShortcutEnabled
   $('autostart').checked = !!state.autostart
   $('healthIntervalMs').value = String(state.config.healthIntervalMs || 60000)
@@ -172,6 +174,7 @@ $('save').addEventListener('click', async () => {
       workspaceLimit: Number($('workspaceLimit').value),
       workspaceIdleMinutes: Number($('workspaceIdleMinutes').value),
       autoHideStaleRunning: $('autoHideStaleRunning').checked,
+      autoCollapseCompletedTasks: $('autoCollapseCompletedTasks').checked,
       globalShortcutEnabled: $('globalShortcutEnabled').checked,
       healthIntervalMs: Number($('healthIntervalMs').value),
       autostart: $('autostart').checked,
@@ -224,6 +227,8 @@ function diagnosticsHtml() {
     <button id="close-workspaces">关闭全部工作区</button>
     <button id="stability-report">导出稳定性报告</button>
     <button id="stability-summary">稳定性汇总</button>
+    <button id="migration-wizard">迁移向导</button>
+    <button id="check-github-release">从 GitHub 检查更新</button>
     <button id="ui-report">导出界面状态</button>
     <button id="clear-cache">清理缓存</button>
   </div>
@@ -265,7 +270,7 @@ $('copy').addEventListener('click', async () => {
   catch (err) { toast('复制失败：' + err.message) }
 })
 $('refresh').addEventListener('click', () => refresh().then(() => toast('已刷新')))
-for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['export-sessions','export-sessions'],['export-markdown','export-markdown'],['rollback-shell','rollback-shell'],['rollback-dsh','rollback-dsh'],['systemd-enable','systemd-enable'],['systemd-disable','systemd-disable'],['fix-owner','fix-owner'],['close-workspaces','close-workspaces'],['stability-report','stability-report'],['stability-summary','stability-summary'],['ui-report','ui-report'],['switch-dev-service','switch-dev-service'],['switch-test-service','switch-test-service'],['root-service-start','root-service-start'],['root-service-stop','root-service-stop'],['clear-cache','clear-cache']]) {
+for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','check-shell-update'],['restart','restart-service'],['open-logs','open-logs'],['export-diag','export-diagnostics'],['export-sessions','export-sessions'],['export-markdown','export-markdown'],['rollback-shell','rollback-shell'],['rollback-dsh','rollback-dsh'],['systemd-enable','systemd-enable'],['systemd-disable','systemd-disable'],['fix-owner','fix-owner'],['close-workspaces','close-workspaces'],['stability-report','stability-report'],['stability-summary','stability-summary'],['migration-wizard','migration-wizard'],['check-github-release','check-github-release'],['ui-report','ui-report'],['switch-dev-service','switch-dev-service'],['switch-test-service','switch-test-service'],['root-service-start','root-service-start'],['root-service-stop','root-service-stop'],['clear-cache','clear-cache']]) {
   $(id).addEventListener('click', async () => {
     try { const res = await window.dshUtility.invoke('diagnostics:action', { action }); toast(res.message || '完成') }
     catch (err) { toast('操作失败：' + err.message) }

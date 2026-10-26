@@ -14,6 +14,7 @@ const { execFileSync, execFile } = require('node:child_process')
 const { promisify } = require('node:util')
 const execFileAsync = promisify(execFile)
 const os = require('node:os')
+const https = require('node:https')
 const path = require('node:path')
 
 const { Config } = require('./config')
@@ -398,6 +399,8 @@ function createWindow() {
       win.webContents.send('dsh-desktop:paste-config', pasteConfigSnapshot())
       win.webContents.send('dsh-desktop:ui-config', {
         autoHideStaleRunning: config.get('autoHideStaleRunning') !== false,
+      autoCollapseCompletedTasks: config.get('autoCollapseCompletedTasks') !== false,
+        autoCollapseCompletedTasks: config.get('autoCollapseCompletedTasks') !== false,
       })
       if (process.env.DSH_DESKTOP_TEST_SIMULATE_PASTE) {
         win.webContents.send('dsh-desktop:test-mode')
@@ -593,6 +596,113 @@ function writeStabilityReport() {
   } catch (err) {
     log(`写入稳定性报告失败: ${err.message}`)
     return null
+  }
+}
+
+async function migrationWizard() {
+  const summary = stabilitySummary()
+  const answer = await dialog.showMessageBox(win, {
+    type: 'info',
+    title: '迁移向导',
+    message: '桌面端迁移检查',
+    detail:
+      `${summary.message}\n\n建议先完成 1–2 天稳定性观察；指标正常后再切换。` +
+      `\n切换只重启界面，不会重启后台服务。`,
+    buttons: ['继续使用开发服务(3080)', '切换到 root 测试(3081)', '取消'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+  })
+  if (answer.response === 0) return switchService(3080, '开发服务')
+  if (answer.response === 1) return switchService(3081, 'root 测试服务')
+  return { message: '已取消迁移向导' }
+}
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      url,
+      { headers: { 'User-Agent': 'dsh-desktop', Accept: 'application/vnd.github+json' }, timeout: 10000 },
+      (res) => {
+        let body = ''
+        res.setEncoding('utf8')
+        res.on('data', (chunk) => {
+          body += chunk
+        })
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}`))
+            return
+          }
+          try {
+            resolve(JSON.parse(body))
+          } catch (err) {
+            reject(new Error(`解析响应失败: ${err.message}`))
+          }
+        })
+      },
+    )
+    req.on('timeout', () => req.destroy(new Error('请求超时')))
+    req.on('error', reject)
+  })
+}
+
+function compareVersion(a, b) {
+  const pa = String(a || '').replace(/^v/, '').split('.').map(Number)
+  const pb = String(b || '').replace(/^v/, '').split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    const x = pa[i] || 0
+    const y = pb[i] || 0
+    if (x !== y) return x > y ? 1 : -1
+  }
+  return 0
+}
+
+async function checkGithubRelease({ interactive = false } = {}) {
+  const current = app.getVersion()
+  try {
+    const release = await fetchJson(
+      'https://api.github.com/repos/ilovecnxx/dsh-desktop/releases/latest',
+    )
+    const latest = String(release.tag_name || '').replace(/^v/, '')
+    const result = {
+      current,
+      latest,
+      available: latest ? compareVersion(latest, current) > 0 : false,
+      url: release.html_url,
+      notes: String(release.body || '').slice(0, 1200),
+    }
+    if (interactive) {
+      if (!result.available) {
+        await dialog.showMessageBox(win, {
+          type: 'info',
+          title: '客户端更新',
+          message: `已是最新版本 v${current}`,
+          detail: result.latest ? `GitHub 最新发布：v${result.latest}` : '未找到发布版本',
+          noLink: true,
+        })
+      } else {
+        const answer = await dialog.showMessageBox(win, {
+          type: 'info',
+          title: '发现客户端新版本',
+          message: `GitHub 最新版本 v${result.latest}（当前 v${current}）`,
+          detail: result.notes || '可在 Release 页面下载新版安装包。',
+          buttons: ['打开下载页', '查看发布说明', '稍后'],
+          defaultId: 0,
+          cancelId: 2,
+          noLink: true,
+        })
+        if (answer.response === 0) shell.openExternal(result.url)
+        else if (answer.response === 1) shell.openExternal(`${result.url}#release-notes`)
+      }
+    }
+    return result
+  } catch (err) {
+    log(`检查 GitHub 发布失败: ${err.message}`)
+    if (interactive) {
+      dialog.showErrorBox('检查客户端更新失败', String(err.message || err))
+    }
+    return { current, latest: null, available: false, error: String(err.message || err) }
   }
 }
 
@@ -1573,6 +1683,9 @@ function applySettingsPatch(patch) {
       Math.max(500, Math.min(200000, Number(merged.pasteToFileThreshold) || 6000)),
     )
   }
+  if (merged.autoCollapseCompletedTasks !== undefined) {
+    config.set('autoCollapseCompletedTasks', Boolean(merged.autoCollapseCompletedTasks))
+  }
   if (merged.autoHideStaleRunning !== undefined) {
     config.set('autoHideStaleRunning', Boolean(merged.autoHideStaleRunning))
   }
@@ -1999,6 +2112,10 @@ async function handleUtilityAction(payload) {
       const file = await captureUiReport('manual')
       return { message: file ? `界面状态已保存：${file}` : '采集界面状态失败' }
     }
+    case 'migration-wizard':
+      return migrationWizard()
+    case 'check-github-release':
+      return checkGithubRelease({ interactive: true })
     case 'stability-summary':
       return stabilitySummary()
     case 'stability-report': {
@@ -2145,6 +2262,7 @@ function menuContext() {
     getPending: () => pendingUpdate,
     checkUpdate: () => checkNow({ interactive: true }),
     checkShellUpdate: () => checkShellUpdate({ interactive: true }),
+    checkGithubRelease: () => checkGithubRelease({ interactive: true }),
     isAutoRestart: () => Boolean(config.get('autoRestartService')),
     toggleAutoRestart: () => {
       config.set('autoRestartService', !config.get('autoRestartService'))
@@ -2265,7 +2383,10 @@ function quitApp({ stopExternal = false } = {}) {
 function registerIpc() {
   ipcMain.handle('dsh:get-ui-config', (event) => {
     if (!isOurSender(event.sender)) throw new Error('unexpected sender')
-    return { autoHideStaleRunning: config.get('autoHideStaleRunning') !== false }
+    return {
+      autoHideStaleRunning: config.get('autoHideStaleRunning') !== false,
+      autoCollapseCompletedTasks: config.get('autoCollapseCompletedTasks') !== false,
+    }
   })
   ipcMain.handle('dsh:get-paste-config', (event) => {
     if (!isOurSender(event.sender)) throw new Error('unexpected sender')
@@ -2278,6 +2399,10 @@ function registerIpc() {
   ipcMain.handle('dsh:save-pasted-file', (event, payload) => {
     if (!isOurSender(event.sender)) throw new Error('unexpected sender')
     return { path: savePastedFile(payload && payload.name, payload && payload.type, payload && payload.data) }
+  })
+  ipcMain.on('dsh:task-panels-collapsed', (event, payload) => {
+    if (!isOurSender(event.sender)) return
+    log(`[task-panel] 已收起 ${payload && payload.count} 个已完成任务面板 ${JSON.stringify(payload && payload.samples)}`)
   })
   ipcMain.on('dsh:drop-diagnostics', async (event, payload) => {
     if (!isOurSender(event.sender)) return

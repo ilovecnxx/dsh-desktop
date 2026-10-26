@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.18 — 2026-10-26
+
+- 任务面板收尾：全部完成后自动收起（启发式，仅隐藏文本明确显示“全部完成”且
+  class/role 含 task/todo/progress/plan 的面板）；设置可关闭
+  （`autoCollapseCompletedTasks`），收起时记录 `[task-panel]` 日志。
+- 迁移向导：诊断面板新增「迁移向导」，展示稳定性汇总，并一键选择
+  「继续用开发服务(3080)」或「切换到 root 测试(3081)」（仅重启界面）。
+- 客户端更新：应用菜单/诊断面板新增「从 GitHub 检查客户端更新」，
+  通过 GitHub Releases API 对比版本、显示发布说明、打开下载页。
+- 性能基线：新增 `scripts/perf-baseline.js` 与 `npm run perf:baseline`，
+  文档 `docs/PERF.md`；本机基线：客户端 0.5%/459 MiB，开发服务 0.9%/574 MiB。
+- 测试总数 30。
+
 ## 1.4.17 — 2026-10-26
 
 - 「任务运行中」状态条残留兼容修复：会话转空闲 8 秒后若 dsh 的 `_running`

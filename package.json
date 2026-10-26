@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
   "productName": "DeepSeek Harness",
-  "version": "1.4.17",
+  "version": "1.4.18",
   "description": "DeepSeek Harness desktop client for Linux with one-click self-update",
   "main": "main/main.js",
   "private": true,
@@ -13,7 +13,8 @@
     "dist:dir": "electron-builder --linux dir",
     "dist:linux": "electron-builder --linux deb AppImage",
     "dist": "electron-builder --linux deb AppImage",
-    "e2e": "node scripts/e2e-attachments.js"
+    "e2e": "node scripts/e2e-attachments.js",
+    "perf:baseline": "node scripts/perf-baseline.js"
   },
   "devDependencies": {
     "electron": "^44.9.3",

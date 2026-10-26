@@ -54,6 +54,7 @@ function buildApplicationMenu(ctx) {
         { label: updateLabel(ctx), accelerator: 'CmdOrCtrl+U', click: () => ctx.checkUpdate() },
         { label: '检查客户端更新…', click: () => ctx.checkShellUpdate() },
         { label: '更新通道', submenu: channelSubmenu(ctx) },
+        { label: '从 GitHub 检查客户端更新…', click: () => ctx.checkGithubRelease() },
         { type: 'separator' },
         { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => ctx.openSettings() },
         { label: '重启客户端', click: () => ctx.restartApp() },

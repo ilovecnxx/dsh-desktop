@@ -56,6 +56,8 @@ const DEFAULT_CONFIG = {
   workspaceIdleMs: 10 * 60 * 1000,
   // 会话空闲时自动隐藏 dsh 前端残留的「任务运行中」状态条（兼容层）
   autoHideStaleRunning: true,
+  // 全部完成后自动收起任务/待办面板（启发式，仅隐藏文本明确显示完成的面板）
+  autoCollapseCompletedTasks: true,
   notifyOnApproval: true,
   // 自动模式下，窗口聚焦但空闲超过该时长也暂停循环动画
   motionIdleMs: 90 * 1000,

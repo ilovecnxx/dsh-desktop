@@ -135,7 +135,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // ---- 会话空闲时隐藏 dsh 前端残留的「任务运行中」状态条（兼容层）----
 const HIDE_RUNNING_STYLE_ID = 'dsh-desktop-hide-running'
-let uiConfig = { autoHideStaleRunning: true }
+let uiConfig = { autoHideStaleRunning: true, autoCollapseCompletedTasks: true }
 let sessionRunning = true
 let hideRunningTimer = null
 
@@ -157,15 +157,68 @@ function setSessionRunning(running) {
   }
   if (sessionRunning) {
     applyRunningBarVisibility()
+    restoreCompletedTaskPanels()
   } else {
     // 等 dsh 自己清理；8 秒后仍在才隐藏，避免误伤
-    hideRunningTimer = setTimeout(() => applyRunningBarVisibility(), 8000)
+    hideRunningTimer = setTimeout(() => {
+      applyRunningBarVisibility()
+      collapseCompletedTaskPanels()
+    }, 8000)
+  }
+}
+
+function findCompletedTaskPanels() {
+  const hint = /task|todo|progress|plan|checklist|step/i
+  const completed = /全部完成|全部任务完成|已完成\s*[：:]?\s*\d+|^已完成$|0\s*个?待办/
+  const found = []
+  for (const el of document.querySelectorAll('div,section,aside,ul,ol')) {
+    const text = (el.textContent || '').replace(/\s+/g, ' ').trim()
+    if (!text || text.length > 500) continue
+    if (!completed.test(text)) continue
+    const cls = String(el.getAttribute('class') || '')
+    const role = el.getAttribute('role') || ''
+    if (!hint.test(cls) && !hint.test(role)) continue
+    const rect = el.getBoundingClientRect()
+    if (rect.width < 120 || rect.height < 24) continue
+    found.push(el)
+  }
+  return found.slice(0, 5)
+}
+
+function collapseCompletedTaskPanels() {
+  if (!uiConfig.autoCollapseCompletedTasks) return
+  const panels = findCompletedTaskPanels()
+  if (!panels.length) return
+  for (const el of panels) {
+    el.dataset.dshDesktopCollapsed = '1'
+    el.style.display = 'none'
+  }
+  try {
+    ipcRenderer.send('dsh:task-panels-collapsed', {
+      count: panels.length,
+      samples: panels.map((el) => ({
+        cls: String(el.getAttribute('class') || '').slice(0, 120),
+        text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+      })),
+    })
+  } catch {
+    // ignore
+  }
+}
+
+function restoreCompletedTaskPanels() {
+  for (const el of document.querySelectorAll('[data-dsh-desktop-collapsed="1"]')) {
+    el.style.display = ''
+    delete el.dataset.dshDesktopCollapsed
   }
 }
 
 ipcRenderer.on('dsh-desktop:ui-config', (_event, cfg) => {
   if (cfg && typeof cfg === 'object') {
-    uiConfig = { autoHideStaleRunning: cfg.autoHideStaleRunning !== false }
+    uiConfig = {
+      autoHideStaleRunning: cfg.autoHideStaleRunning !== false,
+      autoCollapseCompletedTasks: cfg.autoCollapseCompletedTasks !== false,
+    }
     applyRunningBarVisibility()
   }
 })
@@ -176,7 +229,10 @@ ipcRenderer
   .invoke('dsh:get-ui-config')
   .then((cfg) => {
     if (cfg) {
-      uiConfig = { autoHideStaleRunning: cfg.autoHideStaleRunning !== false }
+      uiConfig = {
+        autoHideStaleRunning: cfg.autoHideStaleRunning !== false,
+        autoCollapseCompletedTasks: cfg.autoCollapseCompletedTasks !== false,
+      }
       applyRunningBarVisibility()
     }
   })
