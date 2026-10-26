@@ -10,7 +10,7 @@
  */
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, shell, Notification, globalShortcut, clipboard, screen } = require('electron')
 const fs = require('node:fs')
-const { execFileSync, execFile } = require('node:child_process')
+const { execFileSync, execFile, spawn } = require('node:child_process')
 const { promisify } = require('node:util')
 const execFileAsync = promisify(execFile)
 const os = require('node:os')
@@ -1924,52 +1924,94 @@ function portOpen(port, timeoutMs = 1200) {
   })
 }
 
-async function ensureTargetService(port) {
-  if (await portOpen(port)) return true
-  if (port === 3080) {
-    log('启动开发服务 dsh-web-session.service')
-    try {
-      execFileSync('systemctl', ['--user', 'start', 'dsh-web-session.service'], {
-        timeout: 20000,
-        env: { ...process.env },
-      })
-    } catch (err) {
-      log(`启动开发服务失败: ${err.message}`)
-    }
-  } else if (port === 3081) {
-    log('启动 root 测试服务 dsh-web-root.service（需要密码授权）')
-    try {
-      execFileSync('pkexec', ['systemctl', 'start', 'dsh-web-root.service'], {
-        timeout: 120000,
-      })
-    } catch (err) {
-      log(`启动 root 服务失败: ${err.message}`)
-    }
-  }
-  const deadline = Date.now() + 25000
-  while (Date.now() < deadline) {
-    if (await portOpen(port)) return true
-    await new Promise((resolve) => setTimeout(resolve, 500))
-  }
-  return false
+function launcherPath() {
+  const candidate = path.join(os.homedir(), '.local', 'bin', 'dsh-desktop')
+  return fs.existsSync(candidate) ? candidate : null
 }
 
-async function switchService(port, label) {
-  const ready = await ensureTargetService(port)
-  if (!ready) {
-    return {
-      message: `目标服务 ${label}（127.0.0.1:${port}）启动失败，请检查 systemctl 状态或稍后重试`,
+/** 延迟拉起新的客户端进程（避免 app.relaunch 与单实例锁的竞态）。 */
+function relaunchClient() {
+  const launcher = launcherPath()
+  if (launcher) {
+    const logFile = path.join(USER_DATA, 'relaunch.log')
+    const script = `sleep 2; nohup "${launcher}" >>"${logFile}" 2>&1 &`
+    try {
+      spawn('/bin/bash', ['-lc', script], {
+        detached: true,
+        stdio: 'ignore',
+        env: { ...process.env },
+      }).unref()
+      setTimeout(() => {
+        try {
+          app.releaseSingleInstanceLock?.()
+        } catch {
+          // ignore
+        }
+        app.exit(0)
+      }, 150)
+      return
+    } catch (err) {
+      log(`延迟重启失败，回退 app.relaunch: ${err.message}`)
     }
   }
-  config.set('port', Number(port))
-  config.set('externalService', true)
-  config.set('useSystemdService', false)
-  log(`切换客户端到${label}（127.0.0.1:${port}），重启界面`)
   setTimeout(() => {
     app.relaunch()
     app.exit(0)
   }, 300)
-  return { message: `正在切换到${label}（127.0.0.1:${port}），界面会重启一次` }
+}
+
+function serviceAction(port, action) {
+  if (port === 3080) {
+    execFileSync('systemctl', ['--user', action, 'dsh-web-session.service'], {
+      timeout: 20000,
+      env: { ...process.env },
+    })
+    return
+  }
+  if (port === 3081) {
+    execFileSync('pkexec', ['systemctl', action, 'dsh-web-root.service'], { timeout: 120000 })
+  }
+}
+
+async function switchService(port, label) {
+  const target = Number(port)
+  const other = target === 3080 ? 3081 : 3080
+  const labelOf = (p) => (p === 3080 ? '开发服务(3080)' : 'root 测试(3081)')
+  // 先停另一个服务，释放会话锁，避免“当前会话占用”
+  try {
+    await serviceAction(other, 'stop')
+    log(`切换前已停止 ${labelOf(other)}，释放会话占用`)
+  } catch (err) {
+    log(`停止 ${labelOf(other)} 失败: ${err.message}`)
+  }
+  let ready = false
+  try {
+    await serviceAction(target, 'start')
+    const deadline = Date.now() + 25000
+    while (Date.now() < deadline) {
+      if (await portOpen(target)) {
+        ready = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+  } catch (err) {
+    log(`启动 ${labelOf(target)} 失败: ${err.message}`)
+  }
+  if (!ready) {
+    try {
+      await serviceAction(other, 'start')
+    } catch {
+      // ignore
+    }
+    return { message: `切换到${label}失败：服务未就绪，已尝试恢复原服务` }
+  }
+  config.set('port', target)
+  config.set('externalService', true)
+  config.set('useSystemdService', false)
+  log(`已切换到${label}（127.0.0.1:${target}），自动重启客户端`)
+  relaunchClient()
+  return { message: `已切换到${label}，客户端会自动重启` }
 }
 
 async function controlRootService(action) {
