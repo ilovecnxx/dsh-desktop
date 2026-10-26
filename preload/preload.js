@@ -136,6 +136,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // ---- 文件拖拽上传增强（显示提示层，避免拖入文件时页面跳转）----
 const DROP_OVERLAY_ID = 'dsh-desktop-drop-overlay'
 let dragDepth = 0
+let dropOverlayTimer = null
 
 function hasFiles(event) {
   const types = event.dataTransfer && event.dataTransfer.types
@@ -168,15 +169,30 @@ function showDropOverlay() {
 }
 
 function hideDropOverlay() {
+  if (dropOverlayTimer) {
+    clearTimeout(dropOverlayTimer)
+    dropOverlayTimer = null
+  }
   document.getElementById(DROP_OVERLAY_ID)?.remove()
+}
+
+/** 兜底：拖拽事件序列不完整时（如图片 drop 的 types 不含 Files），1.5 秒后自动收起 */
+function scheduleOverlayHide(ms = 1500) {
+  if (dropOverlayTimer) clearTimeout(dropOverlayTimer)
+  dropOverlayTimer = setTimeout(() => {
+    dragDepth = 0
+    hideDropOverlay()
+  }, ms)
 }
 
 window.addEventListener(
   'dragenter',
   (event) => {
+    // 只要可能带文件就显示提示层；图片/浏览器拖拽的 types 不一定稳定
     if (!hasFiles(event)) return
     dragDepth += 1
     showDropOverlay()
+    scheduleOverlayHide()
   },
   true,
 )
@@ -186,6 +202,7 @@ window.addEventListener(
     if (!hasFiles(event)) return
     dragDepth = Math.max(0, dragDepth - 1)
     if (dragDepth === 0) hideDropOverlay()
+    else scheduleOverlayHide(800)
   },
   true,
 )
@@ -195,19 +212,26 @@ window.addEventListener(
     if (!hasFiles(event)) return
     // 阻止 Electron 默认打开拖入的文件；页面自己的 drop 处理器仍会收到事件
     event.preventDefault()
+    scheduleOverlayHide()
   },
   true,
 )
 window.addEventListener(
   'drop',
   (event) => {
-    if (!hasFiles(event)) return
-    event.preventDefault()
+    // 先无条件收起遮罩：图片拖拽的 drop types 可能不再包含 Files
     dragDepth = 0
     hideDropOverlay()
+    if (!hasFiles(event)) return
+    event.preventDefault()
   },
   true,
 )
+window.addEventListener('dragend', hideDropOverlay, true)
+window.addEventListener('blur', hideDropOverlay)
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') hideDropOverlay()
+}, true)
 
 // ---- 拖拽/粘贴文件与长文本转文件（CODEX 风格）----
 let pasteConfig = { enabled: true, threshold: 6000 }
@@ -364,16 +388,18 @@ async function handleDroppedFiles(files) {
 window.addEventListener(
   'drop',
   (event) => {
+    dragDepth = 0
+    hideDropOverlay()
     if (!hasFiles(event)) return
     event.preventDefault()
     event.stopImmediatePropagation()
-    dragDepth = 0
-    hideDropOverlay()
     const files = [...(event.dataTransfer?.files || [])]
     if (!files.length) return
-    handleDroppedFiles(files).then((ok) => {
-      if (ok) showToast(`已处理 ${files.length} 个文件/文件夹`)
-    })
+    handleDroppedFiles(files)
+      .then((ok) => {
+        if (ok) showToast(`已处理 ${files.length} 个文件/文件夹`)
+      })
+      .finally(() => hideDropOverlay())
   },
   true,
 )

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.8 — 2026-10-26
+
+- 修复拖入图片后界面“模糊”：拖拽遮罩层在图片 drop 时因 `dataTransfer.types`
+  不再包含 `Files` 而提前 return，导致半透明遮罩残留。
+  - `drop` 事件现在**无条件先收起遮罩**再判断文件；
+  - 新增 `dragend`、窗口 `blur`、`Escape` 键收起；
+  - 拖拽事件不完整时 1.5 秒兜底自动收起。
+- 测试总数 28。
+
 ## 1.4.7 — 2026-10-26
 
 - **重要修复**：`dsh:get-paste-config` / `dsh:save-pasted-text` / `dsh:save-pasted-file` /
