@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.14 — 2026-10-26
+
+- CI e2e 稳定化：`E2E attachments` 工作流改用 stub 页面验证
+  「长文本粘贴 → 转文件 → 插入路径」链路（xvfb，无需 dsh/模型配置），已 green；
+  本地 `node scripts/e2e-attachments.js` 继续验证真实 dsh 的
+  「三图拖拽 + 剪贴板截图粘贴」。
+- 增强：`DSH_DESKTOP_TEST_SIMULATE_PASTE` 会主动重发 test-mode，修复 stub 页面下
+  测试 API 未注入的问题。
+- 测试总数 30。
+
 ## 1.4.13 — 2026-10-26
 
 - 工作区实例内存优化：配置 `workspaceLimit`（默认 3），超限按最旧自动关闭；
