@@ -24,10 +24,9 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Download Electron binary
         run: node node_modules/electron/install.js
-      - name: Install xvfb and dsh
+      - name: Install xvfb
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
-          npm install -g @deepseek-ai/dsh
-      - name: Run attachment e2e
-        run: xvfb-run -a node scripts/e2e-attachments.js
+      - name: Run paste pipeline e2e (stub page)
+        run: E2E_STUB=1 xvfb-run -a node scripts/e2e-attachments.js

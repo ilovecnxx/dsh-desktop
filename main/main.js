@@ -2417,16 +2417,20 @@ async function bootstrap() {
   motionTimer = setInterval(() => {
     if (!quitting && !upgrading) syncMotionState()
   }, 15000)
-  try {
-    await ensureServer()
-  } catch (err) {
-    log(`启动服务失败: ${err.message}`)
-    dialog.showErrorBox('启动失败', String(err.message || err))
-    quitApp()
-    return
+  if (process.env.DSH_DESKTOP_TEST_STUB_HTML) {
+    await win.loadFile(process.env.DSH_DESKTOP_TEST_STUB_HTML)
+  } else {
+    try {
+      await ensureServer()
+    } catch (err) {
+      log(`启动服务失败: ${err.message}`)
+      dialog.showErrorBox('启动失败', String(err.message || err))
+      quitApp()
+      return
+    }
   }
   startAutoCheck()
-  startHealthMonitor()
+  if (!process.env.DSH_DESKTOP_TEST_STUB_HTML) startHealthMonitor()
   try {
     log(`GPU 状态: ${JSON.stringify(app.getGPUFeatureStatus())}`)
   } catch {
@@ -2609,6 +2613,8 @@ async function bootstrap() {
   if (simulatePaste) {
     setTimeout(async () => {
       try {
+        win.webContents.send('dsh-desktop:test-mode')
+        await new Promise((r) => setTimeout(r, 500))
         const result = await win.webContents.executeJavaScript(
           `(async () => {
             if (!window.__dshDesktopTest) return 'no-test-api';

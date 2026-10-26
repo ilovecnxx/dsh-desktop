@@ -4,6 +4,9 @@
 /**
  * 附件体验 e2e：起一个隔离的 dsh web 服务 + Electron 测试实例，
  * 自动执行「三图拖拽 + 剪贴板截图 Ctrl+V 粘贴」，输出结构化结果。
+ * 默认连接真实 dsh 服务做「多图拖拽 + 剪贴板截图粘贴」；
+ * 设置 E2E_STUB=1 时改用 stub 页面验证「长文本粘贴 → 转文件 → 插入路径」
+ * （CI 使用，不需要 dsh 与模型配置）。
  * 需要在有显示环境（CI 用 xvfb-run）下运行；退出码 0 表示通过。
  */
 const { spawn } = require('node:child_process')
@@ -29,6 +32,7 @@ function sleep(ms) {
 }
 
 async function main() {
+  const stubMode = process.env.E2E_STUB === '1'
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-e2e-'))
   const dshHome = path.join(root, 'home')
   const work = path.join(root, 'work')
@@ -47,9 +51,12 @@ async function main() {
     }
   }
 
+  let dsh = null
+  let port = ''
+  if (!stubMode) {
   const dshBin = resolveDshBin()
   console.log('E2E_DSH_BIN ' + dshBin)
-  const dsh = spawn(dshBin, ['web', '--no-open', '--port', '0'], {
+  dsh = spawn(dshBin, ['web', '--no-open', '--port', '0'], {
     cwd: work,
     env: { ...process.env, DSH_HOME: dshHome },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -72,26 +79,34 @@ async function main() {
     dsh.stderr.on('data', onData)
     dsh.once('exit', (code) => reject(new Error(`dsh web 退出 ${code}\n${dshOutput.slice(-2000)}`)))
   })
-  const port = new URL(url).port
+  port = new URL(url).port
   fs.writeFileSync(path.join(userData, 'server.log'), `${url}\n`)
+  }
 
   const electron = path.join(projectDir, 'node_modules/electron/dist/electron')
   const args = ['--no-sandbox', '--disable-gpu']
   if (process.env.WAYLAND_DISPLAY) args.push('--ozone-platform=wayland')
   const logFile = path.join(root, 'run.log')
   const runLog = fs.createWriteStream(logFile)
+  const env = {
+    ...process.env,
+    DSH_HOME: dshHome,
+    DSH_DESKTOP_USER_DATA: userData,
+    DSH_DESKTOP_NO_TRAY: '1',
+    DSH_DESKTOP_EXIT_AFTER_MS: stubMode ? '14000' : '18000',
+    DSH_DESKTOP_TEST_ATTACHMENTS: '1',
+  }
+  if (stubMode) {
+    env.DSH_DESKTOP_TEST_STUB_HTML = path.join(projectDir, 'test/fixtures/stub.html')
+    env.DSH_DESKTOP_TEST_SIMULATE_PASTE =
+      '这是一段很长的粘贴内容用于测试自动转文件。'.repeat(400)
+  } else {
+    env.DSH_DESKTOP_PORT = port
+    env.DSH_DESKTOP_TAKEOVER = 'reuse'
+  }
   const child = spawn(electron, [...args, '.'], {
     cwd: projectDir,
-    env: {
-      ...process.env,
-      DSH_HOME: dshHome,
-      DSH_DESKTOP_USER_DATA: userData,
-      DSH_DESKTOP_PORT: port,
-      DSH_DESKTOP_TAKEOVER: 'reuse',
-      DSH_DESKTOP_NO_TRAY: '1',
-      DSH_DESKTOP_EXIT_AFTER_MS: '18000',
-      DSH_DESKTOP_TEST_ATTACHMENTS: '1',
-    },
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   child.stdout.pipe(runLog)
@@ -101,6 +116,8 @@ async function main() {
 
   const log = fs.readFileSync(logFile, 'utf8')
   const match = log.match(/\[test\] attachments (\{.*\})/)
+  const pasteMatch = log.match(/\[test\] 模拟长文本粘贴 (-?\d+) 字符 -> ([^\n]+)/)
+  const composerTail = log.match(/\[test\] 输入框尾部: ("[^\n]*")/)
   let result = null
   if (match) {
     try {
@@ -110,6 +127,21 @@ async function main() {
     }
   }
   console.log('E2E_RESULT ' + JSON.stringify({ code, result }))
+  if (!result && pasteMatch) {
+    console.log('E2E_PASTE ' + JSON.stringify({ chars: pasteMatch[1], path: pasteMatch[2], composer: composerTail ? composerTail[1] : null }))
+    try {
+      process.kill(-dsh?.pid, 'SIGTERM')
+    } catch {
+      // ignore
+    }
+    try {
+      fs.rmSync(root, { recursive: true, force: true })
+    } catch {
+      // ignore
+    }
+    const ok = Number(pasteMatch[1]) > 6000 && pasteMatch[2].includes('pastes') && composerTail && composerTail[1].includes('pastes')
+    process.exit(ok ? 0 : 1)
+  }
   if (!result) {
     console.error('--- run.log tail ---')
     console.error(log.slice(-3000))
