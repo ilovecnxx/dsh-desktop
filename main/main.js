@@ -2389,6 +2389,46 @@ async function bootstrap() {
     }, TEST_HIDE_MS)
   }
 
+  if (process.env.DSH_DESKTOP_TEST_NATIVE_DROP === '1') {
+    setTimeout(async () => {
+      try {
+        const result = await win.webContents.executeJavaScript(
+          `(async () => {
+            const dt = new DataTransfer();
+            dt.items.add(new File(['fake-png-bytes'], 'test-image.png', { type: 'image/png' }));
+            const fire = (type) => {
+              const ev = new DragEvent(type, { bubbles: true, cancelable: true });
+              Object.defineProperty(ev, 'dataTransfer', { value: dt });
+              (document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2) || document.body).dispatchEvent(ev);
+            };
+            fire('dragenter');
+            fire('dragover');
+            fire('drop');
+            await new Promise((r) => setTimeout(r, 1800));
+            const fullscreenBlur = [...document.querySelectorAll('*')].filter((el) => {
+              const st = getComputedStyle(el);
+              const blur = /blur/i.test(st.backdropFilter || '');
+              const rect = el.getBoundingClientRect();
+              return blur && rect.width >= innerWidth * 0.9 && rect.height >= innerHeight * 0.9;
+            }).length;
+            const composer = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
+            return {
+              fullscreenBlur,
+              composerText: composer ? (composer.value ?? composer.textContent ?? '').slice(-120) : '(none)',
+              bodyHasImageName: /test-image\.png/.test(document.body.innerText || ''),
+              hasAttachmentChip: document.querySelectorAll('[class*="attachment"], [class*="file"], [class*="image"]').length,
+            };
+          })()`,
+          true,
+        )
+        log(`[test] native drop ${JSON.stringify(result)}`)
+      } catch (err) {
+        log(`[test] native drop failed: ${err.message}`)
+      }
+      setTimeout(() => app.quit(), 800)
+    }, 4000)
+  }
+
   if (process.env.DSH_DESKTOP_TEST_DROP_OVERLAY === '1') {
     setTimeout(async () => {
       try {
