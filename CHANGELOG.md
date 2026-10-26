@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.2 — 2026-10-26
+
+- **拖拽/粘贴文件与图片**：拖入窗口或从剪贴板粘贴文件/图片时，沙箱 preload 用
+  `webUtils.getPathForFile` 取得真实路径并插入聊天输入框（dsh web 无附件上传接口，
+  路径可直接被 dsh 工具读取）；无路径时保存到 `userData/pastes` 后插入路径。
+- **长文本粘贴转文件（CODEX 风格）**：粘贴文本超过阈值（默认 6000 字符）时自动保存为
+  `pastes/paste-<时间>.txt` 并向输入框插入路径；设置中可开关、调整阈值。
+- **以 root 运行后台服务（实验性）**：设置勾选后用受限助手
+  `/usr/local/sbin/dsh-service` 以 root 启动 dsh web；助手缺失/失败自动回退普通权限；
+  提供 `scripts/setup-root.sh` 安装助手与免密 sudo，诊断面板新增「修复 dsh 文件属主」。
+- 测试总数 24。
+
 ## 1.4.1 — 2026-10-26
 
 - 后台服务可切换为 **systemd 用户服务**（`dsh-web-session.service`）托管：

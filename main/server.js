@@ -86,6 +86,7 @@ class ServerManager {
     this.useSystemd = Boolean(opts.useSystemd)
     this.systemdLog = opts.systemdLog || path.join(os.homedir(), '.config', 'dsh-desktop', 'systemd-server.log')
     this.workspace = opts.workspace || os.homedir()
+    this.runAsRoot = Boolean(opts.runAsRoot)
   }
 
   get baseUrl() {
@@ -195,6 +196,12 @@ class ServerManager {
     while (Date.now() - startedAt < timeoutMs) {
       if (this.startupError) throw this.startupError
       if (!child || child.exitCode !== null || child.signalCode !== null) {
+        if (this.runAsRoot) {
+          this.runAsRoot = false
+          this.child = null
+          this.pushLog('root 启动失败，回退普通权限（需安装 root 助手并配置免密 sudo）')
+          return this._start()
+        }
         throw new Error(
           `dsh web 启动失败（退出码 ${child?.exitCode ?? child?.signalCode ?? '未启动'}）。日志：\n${this.logs.slice(-15).join('\n')}`,
         )
@@ -280,11 +287,16 @@ class ServerManager {
     for (const key of Object.keys(env)) {
       if (key.startsWith('DSH_DESKTOP_')) delete env[key]
     }
-    const child = spawn('/usr/bin/flock', ['-n', this.lockFile, bin, 'web', '--no-open', '--port', String(this.port)], {
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env,
-    })
+    const rootHelper = '/usr/local/sbin/dsh-service'
+    const runAsRoot = this.runAsRoot && fs.existsSync(rootHelper)
+    if (this.runAsRoot && !runAsRoot) {
+      this.pushLog('未找到 root 助手 /usr/local/sbin/dsh-service，回退普通权限')
+    }
+    if (runAsRoot) this.pushLog('以 root 权限启动服务（dsh-service 助手）')
+    const spawnOpts = { detached: true, stdio: ['ignore', 'pipe', 'pipe'], env }
+    const child = runAsRoot
+      ? spawn('/usr/bin/sudo', ['-n', rootHelper, '--no-open', '--port', String(this.port)], spawnOpts)
+      : spawn('/usr/bin/flock', ['-n', this.lockFile, bin, 'web', '--no-open', '--port', String(this.port)], spawnOpts)
     this.child = child
 
     let tail = ''

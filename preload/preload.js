@@ -208,3 +208,173 @@ window.addEventListener(
   },
   true,
 )
+
+// ---- 拖拽/粘贴文件与长文本转文件（CODEX 风格）----
+let pasteConfig = { enabled: true, threshold: 6000 }
+
+function applyPasteConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object') return
+  pasteConfig = {
+    enabled: cfg.enabled !== false,
+    threshold: Number(cfg.threshold) || 6000,
+  }
+}
+
+ipcRenderer.on('dsh-desktop:paste-config', (_event, cfg) => applyPasteConfig(cfg))
+ipcRenderer.invoke('dsh:get-paste-config').then(applyPasteConfig).catch(() => {})
+
+const TOAST_ID = 'dsh-desktop-toast'
+
+function showToast(text) {
+  document.getElementById(TOAST_ID)?.remove()
+  const host = document.createElement('div')
+  host.id = TOAST_ID
+  const shadow = host.attachShadow({ mode: 'closed' })
+  shadow.innerHTML = `
+    <style>
+      .toast {
+        position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+        z-index: 2147483647; max-width: 70vw; padding: 8px 14px;
+        background: rgba(24, 25, 30, 0.95); color: #e8e8ea; border-radius: 8px;
+        font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        border: 1px solid #34363f; box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+      }
+    </style>
+    <div class="toast"></div>`
+  shadow.querySelector('.toast').textContent = text
+  document.documentElement.appendChild(host)
+  setTimeout(() => host.remove(), 2600)
+}
+
+function isEditable(el) {
+  if (!el) return false
+  if (el.disabled || el.readOnly) return false
+  return (
+    el.tagName === 'TEXTAREA' ||
+    el.tagName === 'INPUT' ||
+    el.isContentEditable ||
+    el.getAttribute('role') === 'textbox'
+  )
+}
+
+function findComposer() {
+  const active = document.activeElement
+  if (isEditable(active) && active.offsetParent !== null) return active
+  const candidates = [...document.querySelectorAll(
+    'textarea, [contenteditable="true"], [contenteditable=""], [role="textbox"]',
+  )].filter((el) => isEditable(el) && el.offsetParent !== null)
+  // 聊天输入框通常在最底部
+  candidates.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top)
+  return candidates[0] || null
+}
+
+/** 把路径/文本插入聊天输入框（兼容 textarea 与 contenteditable）。 */
+function insertTextIntoComposer(text) {
+  const el = findComposer()
+  if (!el) {
+    navigator.clipboard?.writeText(text).catch(() => {})
+    showToast('未找到输入框，路径已复制到剪贴板')
+    return false
+  }
+  el.focus()
+  if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set
+    const current = el.value || ''
+    setter.call(el, current && !current.endsWith('\n') ? `${current}\n${text}` : `${current}${text}`)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    return true
+  }
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  const range = document.createRange()
+  range.selectNodeContents(el)
+  range.collapse(false)
+  selection?.addRange(range)
+  if (document.execCommand('insertText', false, text)) return true
+  el.textContent = `${el.textContent || ''}${text}`
+  el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+  return true
+}
+
+async function handleDroppedFiles(files) {
+  const paths = []
+  for (const file of files) {
+    let filePath = ''
+    try {
+      filePath = webUtils.getPathForFile(file) || ''
+    } catch {
+      filePath = ''
+    }
+    if (filePath) {
+      paths.push(filePath)
+      continue
+    }
+    if (file.size <= 20 * 1024 * 1024) {
+      try {
+        const data = new Uint8Array(await file.arrayBuffer())
+        const result = await ipcRenderer.invoke('dsh:save-pasted-file', {
+          name: file.name,
+          type: file.type,
+          data,
+        })
+        if (result && result.path) paths.push(result.path)
+      } catch {
+        // ignore
+      }
+    }
+  }
+  if (!paths.length) return false
+  return insertTextIntoComposer(paths.join('\n'))
+}
+
+// 拖入文件/图片：插入真实路径（页面没有附件上传接口，路径可直接被 dsh 工具读取）
+window.addEventListener(
+  'drop',
+  (event) => {
+    if (!hasFiles(event)) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    dragDepth = 0
+    hideDropOverlay()
+    const files = [...(event.dataTransfer?.files || [])]
+    if (!files.length) return
+    handleDroppedFiles(files).then((ok) => {
+      if (ok) showToast(`已插入 ${files.length} 个文件/图片路径`)
+    })
+  },
+  true,
+)
+
+// 粘贴：文件/图片保存后插入路径；超长文本保存为 txt 再插入路径
+window.addEventListener(
+  'paste',
+  async (event) => {
+    if (!pasteConfig.enabled) return
+    const data = event.clipboardData
+    if (!data) return
+    const fileItems = [...(data.items || [])].filter((item) => item.kind === 'file')
+    if (fileItems.length) {
+      const files = fileItems.map((item) => item.getAsFile()).filter(Boolean)
+      if (!files.length) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const ok = await handleDroppedFiles(files)
+      if (ok) showToast(`已插入 ${files.length} 个图片/文件路径`)
+      return
+    }
+    const text = data.getData('text/plain') || ''
+    if (!text || text.length < pasteConfig.threshold) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    try {
+      const result = await ipcRenderer.invoke('dsh:save-pasted-text', { text })
+      if (result && result.path && insertTextIntoComposer(result.path)) {
+        showToast(`长文本已保存为文件并插入路径（${text.length} 字符）`)
+      }
+    } catch (err) {
+      showToast(`长文本转文件失败：${err.message}`)
+    }
+  },
+  true,
+)

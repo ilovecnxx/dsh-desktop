@@ -380,6 +380,7 @@ function createWindow() {
     if (pendingUpdate && !upgrading) sendUpdate(pendingUpdate)
     if (/^https?:/.test(win.webContents.getURL())) {
       lastMotionPaused = null
+      win.webContents.send('dsh-desktop:paste-config', pasteConfigSnapshot())
       scheduleCapture()
       maybeRunPerfHooks()
       schedulePageDiagnostics()
@@ -537,6 +538,7 @@ function createAuxWindow(targetUrl) {
     applyAuxMotionState(aux)
   })
   aux.webContents.on('did-finish-load', () => {
+    aux.webContents.send('dsh-desktop:paste-config', pasteConfigSnapshot())
     auxMotionState.delete(aux)
     applyAuxMotionState(aux)
   })
@@ -1260,6 +1262,9 @@ function settingsSnapshot() {
       motionMode: resolveMotionMode(config.get('motionMode')),
       notifyOnFinish: config.get('notifyOnFinish') !== false,
       notifyOnApproval: config.get('notifyOnApproval') !== false,
+      pasteToFileEnabled: config.get('pasteToFileEnabled') !== false,
+      pasteToFileThreshold: Number(config.get('pasteToFileThreshold') || 6000),
+      runServiceAsRoot: Boolean(config.get('runServiceAsRoot')),
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
       useX11: config.get('useX11') !== false,
@@ -1296,6 +1301,18 @@ function applySettingsPatch(patch) {
   if (merged.notifyOnFinish !== undefined) config.set('notifyOnFinish', Boolean(merged.notifyOnFinish))
   if (merged.notifyOnApproval !== undefined) {
     config.set('notifyOnApproval', Boolean(merged.notifyOnApproval))
+  }
+  if (merged.pasteToFileEnabled !== undefined) {
+    config.set('pasteToFileEnabled', Boolean(merged.pasteToFileEnabled))
+  }
+  if (merged.pasteToFileThreshold !== undefined) {
+    config.set(
+      'pasteToFileThreshold',
+      Math.max(500, Math.min(200000, Number(merged.pasteToFileThreshold) || 6000)),
+    )
+  }
+  if (merged.runServiceAsRoot !== undefined) {
+    config.set('runServiceAsRoot', Boolean(merged.runServiceAsRoot))
   }
   if (merged.motionMode !== undefined) {
     config.set('motionMode', resolveMotionMode(merged.motionMode))
@@ -1370,6 +1387,58 @@ function clearClientCache() {
   return { message: `已清理 ${removed} 个缓存目录，重启客户端后完全生效` }
 }
 
+function pasteConfigSnapshot() {
+  return {
+    enabled: config.get('pasteToFileEnabled') !== false,
+    threshold: Number(config.get('pasteToFileThreshold') || 6000),
+  }
+}
+
+function isOurSender(sender) {
+  return BrowserWindow.getAllWindows().some((candidate) => candidate.webContents === sender)
+}
+
+function pasteSaveDir() {
+  const dir = path.join(app.getPath('userData'), 'pastes')
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  return dir
+}
+
+function savePastedText(text) {
+  const content = String(text || '')
+  if (!content) throw new Error('空文本')
+  if (content.length > 4 * 1024 * 1024) throw new Error('文本过大（超过 4MB）')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const file = path.join(pasteSaveDir(), `paste-${stamp}.txt`)
+  fs.writeFileSync(file, content, { mode: 0o600 })
+  log(`长文本已保存为文件 ${file}`)
+  return file
+}
+
+function savePastedFile(name, type, data) {
+  const bytes = data instanceof Uint8Array ? Buffer.from(data) : Buffer.from(data || [])
+  if (!bytes.length) throw new Error('空文件')
+  if (bytes.length > 20 * 1024 * 1024) throw new Error('文件过大（超过 20MB）')
+  let ext = path.extname(String(name || '')).toLowerCase()
+  if (!ext) {
+    const typeMap = {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/webp': '.webp',
+      'image/gif': '.gif',
+      'text/plain': '.txt',
+      'application/pdf': '.pdf',
+    }
+    ext = typeMap[String(type || '').toLowerCase()] || '.bin'
+  }
+  if (!/^\.[a-z0-9]{1,8}$/.test(ext)) ext = '.bin'
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const file = path.join(pasteSaveDir(), `paste-${stamp}${ext}`)
+  fs.writeFileSync(file, bytes, { mode: 0o600 })
+  log(`粘贴文件已保存 ${file}`)
+  return file
+}
+
 async function exportSessionsBackup() {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const defaultPath = path.join(app.getPath('downloads'), `dsh-sessions-backup-${stamp}.tar.gz`)
@@ -1405,6 +1474,21 @@ async function exportLatestSessionMarkdown() {
   fs.writeFileSync(picked.filePath, markdown)
   log(`已导出会话 Markdown ${picked.filePath}`)
   return { message: `已导出会话 Markdown：${picked.filePath}` }
+}
+
+async function fixDshOwner() {
+  try {
+    const out = execFileSync('/usr/bin/sudo', ['-n', '/usr/local/sbin/dsh-fix-owner'], {
+      encoding: 'utf8',
+      timeout: 30000,
+    })
+    log(`修复 dsh 文件属主: ${out.trim()}`)
+    return { message: out.trim() || '已修复 ~/.dsh 文件属主' }
+  } catch {
+    return {
+      message: '修复失败：需要先安装 root 助手并配置免密 sudo（见 scripts/setup-root.sh）',
+    }
+  }
 }
 
 async function enableSystemdService() {
@@ -1562,6 +1646,8 @@ async function handleUtilityAction(payload) {
       return enableSystemdService()
     case 'systemd-disable':
       return disableSystemdService()
+    case 'fix-owner':
+      return fixDshOwner()
     default:
       throw new Error(`未知操作: ${action}`)
   }
@@ -1985,6 +2071,7 @@ async function bootstrap() {
   config.set('port', port)
   server = new ServerManager({
     useSystemd: Boolean(config.get('useSystemdService')),
+    runAsRoot: Boolean(config.get('runServiceAsRoot')),
     systemdLog: path.join(USER_DATA, 'systemd-server.log'),
     port,
     dshHome: DSH_HOME,

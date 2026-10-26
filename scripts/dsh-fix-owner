@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# 修复 root 模式运行后 ~/.dsh 的文件属主（由 setup-root.sh 安装）
+set -euo pipefail
+target_user="${SUDO_USER:-$(id -un)}"
+home="$(getent passwd "$target_user" | cut -d: -f6)"
+group="$(id -gn "$target_user")"
+chown -R "$target_user:$group" "$home/.dsh" 2>/dev/null || true
+echo "已将 $home/.dsh 属主恢复为 $target_user:$group"

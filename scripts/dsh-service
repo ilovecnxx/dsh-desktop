@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# 以 root 运行 dsh web 的受限助手（由 setup-root.sh 安装到 /usr/local/sbin）
+set -euo pipefail
+target_user="${SUDO_USER:-$(id -un)}"
+home="$(getent passwd "$target_user" | cut -d: -f6)"
+if [ -z "${home:-}" ]; then home="$HOME"; fi
+export HOME="$home"
+export DSH_HOME="${DSH_HOME:-$home/.dsh}"
+exec /usr/bin/flock -n "$DSH_HOME/web.lock" /usr/bin/dsh web "$@"

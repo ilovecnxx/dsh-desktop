@@ -43,6 +43,11 @@ const DEFAULT_CONFIG = {
   motionMode: 'auto',
   // 系统通知：会话跑完 / 需要确认（窗口未聚焦时）
   notifyOnFinish: true,
+  // 长文本粘贴自动转文件（CODEX 风格）；阈值默认 6000 字符
+  pasteToFileEnabled: true,
+  pasteToFileThreshold: 6000,
+  // 以 root 运行后台服务（实验性，需要先安装免密助手）
+  runServiceAsRoot: false,
   notifyOnApproval: true,
   // 自动模式下，窗口聚焦但空闲超过该时长也暂停循环动画
   motionIdleMs: 90 * 1000,
