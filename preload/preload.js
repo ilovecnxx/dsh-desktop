@@ -299,6 +299,7 @@ function insertTextIntoComposer(text) {
 
 async function handleDroppedFiles(files) {
   const paths = []
+  const blobs = []
   for (const file of files) {
     let filePath = ''
     try {
@@ -306,26 +307,39 @@ async function handleDroppedFiles(files) {
     } catch {
       filePath = ''
     }
-    if (filePath) {
-      paths.push(filePath)
-      continue
-    }
-    if (file.size <= 20 * 1024 * 1024) {
-      try {
-        const data = new Uint8Array(await file.arrayBuffer())
-        const result = await ipcRenderer.invoke('dsh:save-pasted-file', {
-          name: file.name,
-          type: file.type,
-          data,
-        })
-        if (result && result.path) paths.push(result.path)
-      } catch {
-        // ignore
+    if (filePath) paths.push(filePath)
+    else if (file.size <= 20 * 1024 * 1024) blobs.push(file)
+  }
+  if (paths.length) {
+    try {
+      const result = await ipcRenderer.invoke('dsh:open-dropped', { paths })
+      if (result && result.folder) {
+        showToast(`已在新窗口打开工作区：${result.folder}`)
+        return true
       }
+      if (result && Array.isArray(result.files) && result.files.length) {
+        return insertTextIntoComposer(result.files.join('\n'))
+      }
+    } catch (err) {
+      showToast(`处理拖入内容失败：${err.message}`)
     }
   }
-  if (!paths.length) return false
-  return insertTextIntoComposer(paths.join('\n'))
+  const saved = []
+  for (const file of blobs) {
+    try {
+      const data = new Uint8Array(await file.arrayBuffer())
+      const result = await ipcRenderer.invoke('dsh:save-pasted-file', {
+        name: file.name,
+        type: file.type,
+        data,
+      })
+      if (result && result.path) saved.push(result.path)
+    } catch {
+      // ignore
+    }
+  }
+  if (!saved.length) return false
+  return insertTextIntoComposer(saved.join('\n'))
 }
 
 // 拖入文件/图片：插入真实路径（页面没有附件上传接口，路径可直接被 dsh 工具读取）
@@ -340,7 +354,7 @@ window.addEventListener(
     const files = [...(event.dataTransfer?.files || [])]
     if (!files.length) return
     handleDroppedFiles(files).then((ok) => {
-      if (ok) showToast(`已插入 ${files.length} 个文件/图片路径`)
+      if (ok) showToast(`已处理 ${files.length} 个文件/文件夹`)
     })
   },
   true,
@@ -360,7 +374,7 @@ window.addEventListener(
       event.preventDefault()
       event.stopImmediatePropagation()
       const ok = await handleDroppedFiles(files)
-      if (ok) showToast(`已插入 ${files.length} 个图片/文件路径`)
+      if (ok) showToast(`已处理 ${files.length} 个图片/文件`)
       return
     }
     const text = data.getData('text/plain') || ''

@@ -38,6 +38,7 @@ const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
 const utility = require('./utility')
 const sessionsStore = require('./sessions')
+const workspaceService = require('./workspace-service')
 const { buildApplicationMenu, buildTrayMenu } = require('./menu')
 
 const APP_NAME = 'DeepSeek Harness'
@@ -131,6 +132,7 @@ let lastActivityAt = Date.now()
 let motionTimer = null
 let sessionWatchTimer = null
 const auxWindows = new Set()
+const workspaceServices = new Map()
 const auxMotionState = new WeakMap()
 let sessionPrev = { running: false, dialogs: 0 }
 let recentSessions = []
@@ -547,6 +549,40 @@ function createAuxWindow(targetUrl) {
   aux.loadURL(url).catch((err) => log(`新窗口加载失败: ${err.message}`))
   log(`新建窗口（当前共 ${auxWindows.size + 1} 个窗口）`)
   return aux
+}
+
+async function openFolderWorkspace(folder) {
+  if (!folder) return null
+  const service = await workspaceService.startWorkspaceService(folder, { dshHome: DSH_HOME })
+  const aux = createAuxWindow(service.url)
+  if (aux) {
+    const key = aux.webContents.id
+    workspaceServices.set(key, service)
+    aux.on('closed', () => {
+      const tracked = workspaceServices.get(key)
+      workspaceServices.delete(key)
+      if (tracked) {
+        try {
+          tracked.stop()
+        } catch {
+          // ignore
+        }
+        log(`已关闭工作区服务 ${tracked.folder}`)
+      }
+    })
+    log(`已为文件夹启动工作区服务：${service.folder} (pid=${service.child.pid} port=${service.port})`)
+  }
+  return service
+}
+
+async function openFolderWorkspaceDialog() {
+  const picked = await dialog.showOpenDialog(win, {
+    title: '选择文件夹作为工作区',
+    properties: ['openDirectory', 'createDirectory'],
+  })
+  if (picked.canceled || !picked.filePaths.length) return { message: '已取消' }
+  await openFolderWorkspace(picked.filePaths[0])
+  return { message: `已在新窗口打开工作区：${picked.filePaths[0]}` }
 }
 
 function markActivity() {
@@ -1328,6 +1364,7 @@ function settingsSnapshot() {
       pasteToFileThreshold: Number(config.get('pasteToFileThreshold') || 6000),
       runServiceAsRoot: Boolean(config.get('runServiceAsRoot')),
       externalService: Boolean(config.get('externalService')),
+      home: process.env.HOME || os.homedir(),
       port: Number(config.get('port') || 3080),
       globalShortcutEnabled: Boolean(config.get('globalShortcutEnabled')),
       healthIntervalMs: Number(config.get('healthIntervalMs') || 60000),
@@ -1895,6 +1932,7 @@ function menuContext() {
     getServiceStatus: () => serviceStatusText(),
     openSettings: () => openSettingsWindow(),
     openDownloads: () => shell.openPath(app.getPath('downloads')),
+    openFolderWorkspace: () => openFolderWorkspaceDialog(),
     newWindow: () => createAuxWindow(),
     getRecentSessions: () => recentSessions,
     openSession: (item) => openRecentSession(item),
@@ -2353,6 +2391,14 @@ if (!gotLock) {
     if (motionTimer) clearInterval(motionTimer)
     if (sessionWatchTimer) clearInterval(sessionWatchTimer)
     if (recentSessionsTimer) clearInterval(recentSessionsTimer)
+    for (const service of workspaceServices.values()) {
+      try {
+        service.stop()
+      } catch {
+        // ignore
+      }
+    }
+    workspaceServices.clear()
     if (healthTimer) clearInterval(healthTimer)
     if (boundsTimer) clearTimeout(boundsTimer)
     if (config) config.save()

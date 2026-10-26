@@ -37,6 +37,8 @@ function buildApplicationMenu(ctx) {
         { label: '关于 DeepSeek Harness', click: () => ctx.showAbout() },
         { label: '新建窗口', accelerator: 'CmdOrCtrl+Shift+N', click: () => ctx.newWindow() },
         { label: '最近会话', submenu: recentSessionSubmenu(ctx) },
+    { label: '打开文件夹作为工作区…', click: () => ctx.openFolderWorkspace() },
+        { label: '打开文件夹作为工作区…', click: () => ctx.openFolderWorkspace() },
         { type: 'separator' },
         { label: updateLabel(ctx), accelerator: 'CmdOrCtrl+U', click: () => ctx.checkUpdate() },
         { label: '检查客户端更新…', click: () => ctx.checkShellUpdate() },

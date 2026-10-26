@@ -222,6 +222,7 @@ async function refresh() {
     ['端口', info.port],
     ['全局快捷键', info.shortcut],
     ['软件渲染', info.softwareRendering ? '开' : '关（GPU 加速）'],
+    ['当前 HOME', info.home || process.env.HOME || ''],
     ['服务托管', info.useSystemdService ? 'systemd 用户服务' : info.externalService ? '外部服务 ' + info.port : '客户端子进程'],
     ['界面动效', info.motionMode === 'always' ? '始终暂停' : info.motionMode === 'blur' ? '仅失焦暂停' : info.motionMode === 'auto' ? '自动（失焦/空闲暂停）' : '正常'],
     ['Electron', info.electron],
