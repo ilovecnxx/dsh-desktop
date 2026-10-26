@@ -1549,6 +1549,53 @@ function applySettingsPatch(patch) {
   return settingsSnapshot()
 }
 
+async function captureUiReport(tag = 'manual') {
+  try {
+    if (!win || win.isDestroyed()) return null
+    const info = await win.webContents.executeJavaScript(
+      `(() => {
+        const els = [...document.querySelectorAll('*')].filter((el) => {
+          const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+          const cls = String(el.getAttribute('class') || '');
+          return /运行中|任务运行|Working|Running/.test(text) || /_running/i.test(cls);
+        });
+        return {
+          title: document.title,
+          url: location.href.replace(/token=[^&]+/, 'token=[redacted]'),
+          matches: els.slice(0, 20).map((el) => ({
+            tag: el.tagName.toLowerCase(),
+            cls: String(el.getAttribute('class') || '').slice(0, 160),
+            text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+            rect: (() => {
+              const r = el.getBoundingClientRect();
+              return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)];
+            })(),
+            display: getComputedStyle(el).display,
+            visibility: getComputedStyle(el).visibility,
+            outer: el.outerHTML.slice(0, 500),
+          })),
+          bodyTail: (document.body.innerText || '').slice(-300),
+        };
+      })()`,
+      true,
+    )
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const file = path.join(USER_DATA, `ui-report-${tag}-${stamp}.json`)
+    fs.writeFileSync(file, JSON.stringify(info, null, 2))
+    try {
+      const image = await win.webContents.capturePage()
+      fs.writeFileSync(file.replace(/\.json$/, '.png'), image.toPNG())
+    } catch {
+      // ignore screenshot failure
+    }
+    log(`界面状态已保存 ${file}`)
+    return file
+  } catch (err) {
+    log(`采集界面状态失败: ${err.message}`)
+    return null
+  }
+}
+
 async function exportDiagnosticsBundle() {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const defaultPath = path.join(app.getPath('downloads'), `dsh-desktop-diagnostics-${stamp}.tar.gz`)
@@ -1886,6 +1933,10 @@ async function handleUtilityAction(payload) {
       return disableSystemdService()
     case 'close-workspaces':
       return closeAllWorkspaces()
+    case 'ui-report': {
+      const file = await captureUiReport('manual')
+      return { message: file ? `界面状态已保存：${file}` : '采集界面状态失败' }
+    }
     case 'stability-report': {
       const data = writeStabilityReport()
       return { message: `稳定性报告：${stabilityFilePath()}${data ? '' : '（写入失败）'}` }
@@ -2322,12 +2373,20 @@ async function pollSessionState() {
     return
   }
   if (!state || typeof state.running !== 'boolean') return
+  const previousRunning = sessionPrev.running === true
   const decision = sessionNotifyDecision(sessionPrev, state, win.isFocused(), {
     finishEnabled: config.get('notifyOnFinish') !== false,
     approvalEnabled: config.get('notifyOnApproval') !== false,
   })
   sessionPrev = { running: state.running, dialogs: Number(state.dialogs) || 0 }
-  if (!decision) return
+  if (!decision) {
+    if (previousRunning && state.running === false) {
+      setTimeout(() => {
+        captureUiReport('idle').catch(() => {})
+      }, 5000)
+    }
+    return
+  }
   const title =
     typeof state.title === 'string' && state.title ? state.title : 'DeepSeek Harness'
   if (decision === 'finish') notify('会话已完成', title)
