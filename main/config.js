@@ -58,6 +58,8 @@ const DEFAULT_CONFIG = {
   autoHideStaleRunning: true,
   // 全部完成后自动收起任务/待办面板（启发式，仅隐藏文本明确显示完成的面板）
   autoCollapseCompletedTasks: true,
+  // 首次关闭到托盘提示只显示一次（持久化）
+  closeHintShown: false,
   notifyOnApproval: true,
   // 自动模式下，窗口聚焦但空闲超过该时长也暂停循环动画
   motionIdleMs: 90 * 1000,

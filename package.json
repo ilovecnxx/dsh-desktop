@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
   "productName": "DeepSeek Harness",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "DeepSeek Harness desktop client for Linux with one-click self-update",
   "main": "main/main.js",
   "private": true,

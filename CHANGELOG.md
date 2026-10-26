@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.3 — 2026-10-26
+
+- BUG/优化（无新功能）：
+  - `rollout.log` 无轮转已涨到 56MB：启动时按 2MB 轮转；
+  - `ui-report-*` 与 `pastes/` 无清理：启动时保留最近 20 个诊断文件、清理
+    7 天前或超过 200 个的粘贴文件；
+  - 关闭到托盘提示改为持久化（`closeHintShown`），不再每次启动重复提示；
+  - `dsh-root-service` 助手新增 owner-sync 启停；切回 3080 时停 owner-sync、
+    修复属主后再启动，root 模式才运行属主同步；
+  - 外部服务模式启动 3081 时，先用免密助手尝试启动 root 服务，避免干等 90 秒；
+  - 修正 `openFolderWorkspace` 中 `updateTrayTooltip` 的插入位置/缩进。
+- 磁盘：清理 877MB 构建产物与 56MB rollout.log。
+- 测试 30/30。
+
 ## 1.5.2 — 2026-10-26
 
 - 测试与性能专项（无新功能）：

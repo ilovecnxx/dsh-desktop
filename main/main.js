@@ -338,7 +338,8 @@ function createWindow() {
       event.preventDefault()
       if (tray && !tray.isDestroyed()) {
         win.hide()
-        if (!trayHintShown) {
+        if (!config.get('closeHintShown')) {
+          config.set('closeHintShown', true)
           trayHintShown = true
           notify(APP_NAME, '窗口已隐藏到系统托盘，可从托盘图标重新打开。')
         }
@@ -819,7 +820,7 @@ async function openFolderWorkspace(folder) {
     log(`已为文件夹启动工作区服务：${service.folder} (pid=${service.child.pid} port=${service.port})`)
     config.set('recentWorkspaces', addRecentWorkspace(config.get('recentWorkspaces') || [], service.folder))
     refreshMenus()
-  updateTrayTooltip()
+    updateTrayTooltip()
   }
   return service
 }
@@ -1268,11 +1269,26 @@ async function tryStartUserService(targetPort) {
   }
 }
 
+async function tryStartRootService(targetPort) {
+  if (Number(targetPort) !== 3081) return false
+  const helper = '/usr/local/sbin/dsh-root-service'
+  if (!fs.existsSync(helper)) return false
+  try {
+    execFileSync('/usr/bin/sudo', ['-n', helper, 'start'], { timeout: 30000, stdio: 'ignore' })
+    log('外部服务未运行，已通过免密助手启动 dsh-web-root.service')
+    return true
+  } catch (err) {
+    log(`启动 dsh-web-root.service 失败: ${err.message}`)
+    return false
+  }
+}
+
 async function ensureServer() {
   if (config.get('externalService')) {
     if (port === 3080) tryFixDshOwner()
     let existing = await server.detectExisting()
     if (!existing || !existing.url) {
+      await tryStartRootService(port)
       await tryStartUserService(port)
       log('外部服务暂不可用，等待服务就绪（最多 90 秒）')
       if (win && !win.isDestroyed()) await showReconnectPage('正在连接外部 dsh 服务…')
@@ -2015,7 +2031,21 @@ async function switchService(port, label) {
   } catch (err) {
     log(`停止 ${labelOf(other)} 失败: ${err.message}`)
   }
-  if (target === 3080) tryFixDshOwner()
+  const helper = '/usr/local/sbin/dsh-root-service'
+  const helperAction = (action) => {
+    if (!fs.existsSync(helper)) return
+    try {
+      execFileSync('/usr/bin/sudo', ['-n', helper, action], { timeout: 20000, stdio: 'ignore' })
+    } catch (err) {
+      log(`免密助手 ${action} 失败: ${err.message}`)
+    }
+  }
+  if (target === 3080) {
+    helperAction('owner-stop')
+    tryFixDshOwner()
+  } else {
+    helperAction('owner-start')
+  }
   let ready = false
   try {
     await serviceAction(target, 'start')
@@ -2937,10 +2967,80 @@ function startSessionWatcher() {
   }, 5000)
 }
 
+function pruneUiReports(keep = 20) {
+  try {
+    const files = fs
+      .readdirSync(USER_DATA)
+      .filter((name) => /^ui-report-/.test(name))
+      .map((name) => {
+        try {
+          const file = path.join(USER_DATA, name)
+          return { name, file, mtime: fs.statSync(file).mtimeMs }
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtime - a.mtime)
+    for (const item of files.slice(keep)) {
+      try {
+        fs.rmSync(item.file, { force: true })
+      } catch {
+        // ignore
+      }
+    }
+    if (files.length > keep) log(`已清理 ${files.length - keep} 个旧界面诊断文件`)
+  } catch {
+    // ignore
+  }
+}
+
+function prunePastes(maxAgeMs = 7 * 24 * 60 * 60 * 1000, maxFiles = 200) {
+  try {
+    const dir = path.join(USER_DATA, 'pastes')
+    if (!fs.existsSync(dir)) return
+    const files = fs
+      .readdirSync(dir)
+      .map((name) => {
+        try {
+          const file = path.join(dir, name)
+          const stat = fs.statSync(file)
+          return { file, mtime: stat.mtimeMs }
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtime - a.mtime)
+    const now = Date.now()
+    let removed = 0
+    for (const [index, item] of files.entries()) {
+      if (index >= maxFiles || now - item.mtime > maxAgeMs) {
+        try {
+          fs.rmSync(item.file, { force: true })
+          removed += 1
+        } catch {
+          // ignore
+        }
+      }
+    }
+    if (removed) log(`已清理 ${removed} 个旧粘贴文件`)
+  } catch {
+    // ignore
+  }
+}
+
 async function bootstrap() {
   config = new Config(USER_DATA)
   updater.setRegistry(normalizeRegistry(config.get('registry')))
   rotateIfNeeded(MAIN_LOG, MAIN_LOG_MAX_BYTES)
+  try {
+    rotateIfNeeded(path.join(USER_DATA, 'rollout.log'), 2 * 1024 * 1024)
+  } catch (err) {
+    log(`轮转 rollout.log 失败: ${err.message}`)
+  }
+  pruneUiReports(20)
+  prunePastes(7 * 24 * 60 * 60 * 1000, 200)
   app.on('child-process-gone', (_event, details) => {
     if (details && details.type === 'GPU') {
       handleGpuProcessGone(details).catch((err) => log(`处理 GPU 崩溃失败: ${err.message}`))
