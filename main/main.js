@@ -1278,6 +1278,11 @@ async function tryStartRootService(targetPort) {
   if (!fs.existsSync(helper)) return false
   try {
     execFileSync('/usr/bin/sudo', ['-n', helper, 'start'], { timeout: 30000, stdio: 'ignore' })
+    try {
+      execFileSync('/usr/bin/sudo', ['-n', helper, 'owner-start'], { timeout: 20000, stdio: 'ignore' })
+    } catch {
+      // owner-sync 非必需，失败不阻塞
+    }
     log('外部服务未运行，已通过免密助手启动 dsh-web-root.service')
     return true
   } catch (err) {

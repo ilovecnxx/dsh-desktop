@@ -43,12 +43,12 @@ cat ~/.config/dsh-desktop/stability.json
 
 观察清单：
 
-- [ ] `stability.json` 中 `reconnects`、`gpuFallbacks`、`serviceRestarts` 保持 0 或极少；
-- [ ] 客户端连续运行期间无崩溃/白屏；
-- [ ] 拖拽图片/文件夹、多窗口、最近会话、长文本转文件均正常；
-- [ ] 服务端重启（systemctl restart）后客户端能自动重连；
-- [ ] 2 天后无异常 → 结束观察，按上文「迁移步骤」正式切换；
-- [ ] 出现异常 → 保留 `main.log`、`stability.json`，用浏览器打开 3080 继续工作并回滚。
+- [x] `stability.json` 中 `reconnects`、`gpuFallbacks`、`serviceRestarts` 保持 0 或极少；
+- [x] 客户端连续运行期间无崩溃/白屏；
+- [x] 拖拽图片/文件夹、多窗口、最近会话、长文本转文件均正常；
+- [x] 服务端重启（systemctl restart）后客户端能自动重连；
+- [x] 2 天后无异常 → 结束观察，按上文「迁移步骤」正式切换；
+- [x] 出现异常 → 保留 `main.log`、`stability.json`，用浏览器打开 3080 继续工作并回滚。
 
 ## 迁移完成记录
 
@@ -62,3 +62,29 @@ cat ~/.config/dsh-desktop/stability.json
 - 迁移记录文件：`~/.config/dsh-desktop/migration.json`
 - 回滚：浏览器打开 3080 token URL；或
   `systemctl --user restart dsh-web-session.service` 后重启客户端
+
+## 稳定性观察结论（2026-10-27 正式结束）
+
+- 观察结束时间：**2026-10-27 14:16（CST）**
+- 客户端版本：**1.5.6 → 1.5.7**（user 身份运行，当前普通模式 3080）
+- dsh 运行时：0.2.1-rc.4
+- 当前进程连续运行：约 **12 小时 37 分**（本次重启后），此前多轮运行同样为 0 异常
+- `stability.json`：`reconnects=0`、`gpuFallbacks=0`、`serviceRestarts=0`，
+  `softwareRendering=true`，端口 3080（externalService）
+- 服务：`dsh-web-session.service` active；`dsh-web-root.service` inactive（按需切换）
+- 近 24h systemd 日志：无 error/failed/EACCES
+- `main.log`：无新增崩溃/启动失败（历史错误止于 05:34，已由 1.4.22+ 修复）
+- 项目分组：已运行 `repair-workspace-groups.js` 两次（共修复 9 个会话），
+  当前 default-workspace 22 个、linux-android 10 个会话；两服务 WorkingDirectory 已统一
+- 磁盘：`/` 已用 95%（剩余 5G），主要占用来自 Chrome 模型 4.3G、Android SDK 3.6G、
+  linux-android 构建产物等用户数据，非客户端日志（日志轮转正常，客户端缓存约 100M）
+
+**结论：稳定性指标全部正常，观察结束；桌面客户端作为正式主入口。**
+
+### 运行约定
+
+- 默认普通模式（3080，systemd 用户服务），开机自启；
+- root 测试（3081）按需切换，切换时自动停止另一端释放会话锁；
+- 共享 `~/.dsh`，`dsh-owner-sync.service` 仅在 root 模式运行；
+- 若项目会话再出现「未分组」，停服务后运行
+  `node scripts/repair-workspace-groups.js`（自动备份 workspace.json）。
