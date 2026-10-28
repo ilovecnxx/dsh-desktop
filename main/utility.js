@@ -116,6 +116,7 @@ function settingsHtml() {
   <div class="row"><div><div class="label">显示状态胶囊</div><div class="hint">右下角显示模式/端口与快捷操作</div></div><input type="checkbox" id="showStatusPill"></div>
   <div class="row"><div><div class="label">界面风格</div><div class="hint">增强聊天文字、代码/命令行块的对比度与配色</div></div><select id="uiTheme"><option value="modern">现代</option><option value="contrast">高对比</option><option value="soft">柔和</option><option value="off">关闭</option></select></div>
   <div class="row"><div><div class="label">界面缩放</div></div><select id="uiZoom"><option value="0.9">90%</option><option value="1">100%</option><option value="1.1">110%</option><option value="1.25">125%</option></select></div>
+  <div class="row"><div><div class="label">第三方 API 接入</div><div class="hint">OpenAI / Anthropic / Kimi / 自建兼容网关（模型 API）</div></div><button id="third-party-apis">管理…</button></div>
   <div class="row"><div><div class="label">全部完成后收起任务面板</div><div class="hint">启发式：仅隐藏明确显示“全部完成”的任务/待办面板</div></div><input type="checkbox" id="autoCollapseCompletedTasks"></div>
   <div class="row"><div><div class="label">自动隐藏运行中状态条</div><div class="hint">空闲时隐藏 dsh 前端残留的「任务运行中」条</div></div><input type="checkbox" id="autoHideStaleRunning"></div>
   <div class="row"><div><div class="label">工作区实例上限</div><div class="hint">同时打开的工作区窗口数，超出按最旧自动关闭</div></div><input type="number" id="workspaceLimit" min="1" max="10" step="1"></div>
@@ -220,6 +221,10 @@ for (const [id, action] of [['check-dsh','check-dsh-update'],['check-shell','che
     } catch (err) { toast('操作失败：' + err.message) }
   })
 }
+$('third-party-apis').addEventListener('click', async () => {
+  try { await window.dshUtility.invoke('settings:action', { action: 'third-party-apis' }); toast('已打开第三方 API 窗口') }
+  catch (err) { toast('打开失败：' + err.message) }
+})
 refresh().catch((err) => toast('加载失败：' + err.message))
 </script></body></html>`
 }
@@ -312,4 +317,106 @@ refresh().catch((err) => toast('加载失败：' + err.message))
 </script></body></html>`
 }
 
-module.exports = { createUtilityWindow, settingsHtml, diagnosticsHtml, clipboard }
+
+function providersHtml() {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>${BASE_CSS}
+  textarea{width:100%;min-height:74px;background:#171b24;color:#eef1f8;border:1px solid #2f3749;border-radius:9px;padding:8px 10px;font:12px/1.55 ui-monospace,monospace;outline:none;resize:vertical}
+  textarea:focus{border-color:#5b7cfa;box-shadow:0 0 0 3px rgba(91,124,250,.16)}
+  .provider{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);border-radius:12px;padding:12px 14px;margin:8px 0;display:flex;align-items:center;gap:12px;justify-content:space-between}
+  .provider .name{font-weight:600;color:#eef1f8}
+  .provider .meta{color:#8f96a9;font-size:11px;margin-top:3px;word-break:break-all}
+  .badge{display:inline-block;border:1px solid #313b4f;border-radius:999px;padding:0 7px;font-size:10px;color:#9db4ff;margin-left:6px}
+  .badge.miss{color:#ff8f9c;border-color:#5a2a33}
+  .grow{flex:1;min-width:0}
+  </style></head>
+<body><div class="wrap">
+  <h1>第三方 API 接入</h1>
+  <div class="sub">模型 API：OpenAI / Anthropic / Kimi 或任意兼容网关。保存后写入 DSH profile 与凭据文件，点「重启服务」生效。</div>
+  <div id="list"></div>
+
+  <div class="row"><div class="grow"><div class="label">提供商路由名</div><div class="hint">小写字母开头，如 my-gateway、openai、kimi</div></div><input type="text" id="route" placeholder="my-gateway" style="min-width:220px"></div>
+  <div class="row"><div class="grow"><div class="label">显示名称</div></div><input type="text" id="displayName" placeholder="My Gateway" style="min-width:220px"></div>
+  <div class="row"><div class="grow"><div class="label">协议</div><div class="hint">按网关支持的协议选择</div></div><select id="api" style="min-width:230px"></select></div>
+  <div class="row"><div class="grow"><div class="label">API 地址</div><div class="hint">如 https://api.openai.com/v1 或自建网关地址</div></div><input type="text" id="baseURL" placeholder="https://api.example.com/v1" style="min-width:300px"></div>
+  <div class="row"><div class="grow"><div class="label">API 密钥</div><div class="hint">留空表示保留已保存的密钥；保存后写入 ~/.dsh/.credentials.yaml</div></div><input type="text" id="apiKey" placeholder="sk-..." style="min-width:260px"></div>
+  <div class="row"><div class="grow"><div class="label">模型 ID</div><div class="hint">每行一个；可写 model-id 或 model-id | 显示名</div></div><textarea id="models" placeholder="gpt-4o-mini&#10;deepseek-chat"></textarea></div>
+  <div class="row"><div class="grow"><div class="label">设为默认模型</div><div class="hint">保存后把第一个模型设为 agent 默认模型</div></div><input type="checkbox" id="setDefault"></div>
+
+  <div class="actions">
+    <button class="primary" id="save">保存并写入 DSH</button>
+    <button id="test">测试连接</button>
+    <button id="reset">清空表单</button>
+    <button id="restart">重启服务</button>
+    <button id="open-credentials">打开凭据目录</button>
+  </div>
+  <div class="toast" id="toast"></div>
+  <div class="sub" id="paths" style="margin-top:14px"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id)
+let providers = []
+function toast(text) { $('toast').textContent = text || '' }
+function esc(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+async function load() {
+  const state = await window.dshUtility.invoke('providers:get')
+  providers = state.providers || []
+  $('paths').textContent = 'DSH：' + state.dshHome + '　profile：' + state.patchFile
+  const choices = state.apiChoices || []
+  $('api').innerHTML = choices.map((item) => '<option value="' + esc(item.id) + '">' + esc(item.label) + '</option>').join('')
+  if (!providers.length) {
+    $('list').innerHTML = '<div class="provider"><div class="grow"><div class="name">还没有第三方提供商</div><div class="meta">在下方填写地址、密钥和模型后保存</div></div></div>'
+    return
+  }
+  $('list').innerHTML = providers.map((item) => '<div class="provider"><div class="grow"><div class="name">' + esc(item.displayName || item.route) + '<span class="badge ' + (item.keyConfigured ? '' : 'miss') + '">' + (item.keyConfigured ? '密钥已配置' : '缺少密钥') + '</span></div><div class="meta">' + esc(item.route) + ' · ' + esc(item.api) + ' · ' + esc(item.baseURL) + ' · ' + item.models.length + ' 个模型</div></div><div><button data-edit="' + esc(item.route) + '">编辑</button> <button data-del="' + esc(item.route) + '">删除</button></div></div>').join('')
+  for (const button of document.querySelectorAll('[data-edit]')) button.addEventListener('click', () => edit(button.dataset.edit))
+  for (const button of document.querySelectorAll('[data-del]')) button.addEventListener('click', () => remove(button.dataset.del))
+}
+function edit(route) {
+  const item = providers.find((candidate) => candidate.route === route)
+  if (!item) return
+  $('route').value = item.route
+  $('displayName').value = item.displayName || ''
+  $('api').value = item.api
+  $('baseURL').value = item.baseURL
+  $('apiKey').value = ''
+  $('models').value = item.models.map((model) => model.name ? model.id + ' | ' + model.name : model.id).join('\n')
+  $('setDefault').checked = false
+  toast('编辑 ' + route + '：密钥留空表示保留原密钥')
+}
+function draft() {
+  const models = $('models').value.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+    const parts = line.split('|')
+    return { id: parts[0].trim(), ...(parts[1] && parts[1].trim() ? { name: parts[1].trim() } : {}) }
+  })
+  return { route: $('route').value.trim(), displayName: $('displayName').value.trim(), api: $('api').value, baseURL: $('baseURL').value.trim(), apiKey: $('apiKey').value.trim(), models, setDefault: $('setDefault').checked }
+}
+async function save() {
+  try { const result = await window.dshUtility.invoke('providers:save', draft()); toast(result.message || '已保存'); await load() }
+  catch (err) { toast('保存失败：' + err.message) }
+}
+async function test() {
+  try { const result = await window.dshUtility.invoke('providers:test', draft()); toast(result.message || '完成') }
+  catch (err) { toast('测试失败：' + err.message) }
+}
+async function remove(route) {
+  if (!confirm('删除提供商 ' + route + ' 及其配置？密钥会保留在凭据文件。')) return
+  try { const result = await window.dshUtility.invoke('providers:delete', { route }); toast(result.message || '已删除'); await load() }
+  catch (err) { toast('删除失败：' + err.message) }
+}
+function reset() { for (const id of ['route','displayName','baseURL','apiKey','models']) $(id).value = ''; $('setDefault').checked = false; toast('') }
+$('save').addEventListener('click', save)
+$('test').addEventListener('click', test)
+$('reset').addEventListener('click', reset)
+$('restart').addEventListener('click', async () => {
+  try { const result = await window.dshUtility.invoke('providers:restart-service'); toast(result.message || '服务已重启') }
+  catch (err) { toast('重启失败：' + err.message) }
+})
+$('open-credentials').addEventListener('click', async () => {
+  try { const result = await window.dshUtility.invoke('providers:open-credentials'); toast(result.message || '已打开') }
+  catch (err) { toast('打开失败：' + err.message) }
+})
+load().catch((err) => toast('加载失败：' + err.message))
+</script></body></html>`
+}
+
+module.exports = { createUtilityWindow, settingsHtml, diagnosticsHtml, providersHtml, clipboard }

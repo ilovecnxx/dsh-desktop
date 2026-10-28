@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.6.0 — 2026-10-28
+
+- 新增「第三方 API 接入」（设置 → 第三方 API 接入 / 菜单「第三方 API 接入…」）：
+  - 支持 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages
+    协议，以及 Kimi、自建兼容网关；
+  - 填写路由名、显示名、API 地址、密钥、模型列表；
+  - 保存写入 `~/.dsh/profiles/web/cordis.patch.yml`（llm-pi-ai providers）和
+    `~/.dsh/.credentials.yaml`（密钥，300 权限、自动重载）；
+  - 可选「设为默认模型」，自动更新 agent-default-model；
+  - 「测试连接」请求 `/models` 检查地址与密钥；
+  - 「重启服务」使配置生效；「打开凭据目录」定位密钥文件；
+  - 配置文件仅保存路由/地址/模型，不保存明文密钥。
+- 测试 30/30。
+
 ## 1.5.7 — 2026-10-27
 
 - 稳定性观察正式结束（客户端 0 重连 / 0 GPU 回退 / 0 服务重启）。

@@ -40,6 +40,7 @@ const {
 const updater = require('./updater')
 const shellUpdater = require('./shell-updater')
 const utility = require('./utility')
+const providers = require('./providers')
 const sessionsStore = require('./sessions')
 const workspaceService = require('./workspace-service')
 const { buildApplicationMenu, buildTrayMenu } = require('./menu')
@@ -1638,6 +1639,19 @@ async function applyShellUpdateFlow(result) {
 
 let settingsWin = null
 let diagnosticsWin = null
+let providersWin = null
+let providerService = null
+
+function getProviderService() {
+  if (!providerService) {
+    providerService = new providers.ProviderService({
+      userData: USER_DATA,
+      dshHome: process.env.DSH_HOME || path.join(os.homedir(), '.dsh'),
+      log,
+    })
+  }
+  return providerService
+}
 
 function readTail(file, maxLines) {
   return redact(boundedReadTail(file, maxLines))
@@ -2306,6 +2320,8 @@ async function handleUtilityAction(payload) {
       return showGithubStatus()
     case 'dsh-command':
       return showDshCommandInfo()
+    case 'third-party-apis':
+      return openProvidersWindow()
     case 'migration-wizard':
       return migrationWizard()
     case 'check-github-release':
@@ -2388,6 +2404,24 @@ function openSettingsWindow() {
     settingsWin = null
   })
   maybeCaptureUtility(settingsWin, 'settings')
+}
+
+function openProvidersWindow() {
+  if (providersWin && !providersWin.isDestroyed()) {
+    providersWin.show()
+    providersWin.focus()
+    return
+  }
+  providersWin = utility.createUtilityWindow({
+    title: '第三方 API 接入',
+    width: 900,
+    height: 860,
+    html: utility.providersHtml(),
+  })
+  providersWin.on('closed', () => {
+    providersWin = null
+  })
+  maybeCaptureUtility(providersWin, 'providers')
 }
 
 function openDiagnosticsWindow() {
@@ -2475,6 +2509,7 @@ function menuContext() {
     toggleAutostart: () => toggleAutostart(),
     getServiceStatus: () => serviceStatusText(),
     openSettings: () => openSettingsWindow(),
+    openProviders: () => openProvidersWindow(),
     openDownloads: () => shell.openPath(app.getPath('downloads')),
     openFolderWorkspace: () => openFolderWorkspaceDialog(),
     getServiceMode: () => ({
@@ -2940,6 +2975,22 @@ function registerIpc() {
   ipcMain.handle('diagnostics:action', async (_event, payload) =>
     handleDiagnosticsAction(payload || {}),
   )
+  ipcMain.handle('providers:get', () => getProviderService().list())
+  ipcMain.handle('providers:save', (_event, payload) => getProviderService().save(payload || {}))
+  ipcMain.handle('providers:delete', (_event, payload) =>
+    getProviderService().remove(payload && payload.route),
+  )
+  ipcMain.handle('providers:test', (_event, payload) => getProviderService().test(payload || {}))
+  ipcMain.handle('providers:restart-service', async () => {
+    await serviceAction(port, 'restart')
+    return { ok: true, message: '服务已重启，界面会自动重连' }
+  })
+  ipcMain.handle('providers:open-credentials', () => {
+    const file = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), '.credentials.yaml')
+    if (!fs.existsSync(file)) return { ok: false, message: '凭据文件尚未生成，请先保存一次密钥' }
+    shell.showItemInFolder(file)
+    return { ok: true, message: '已在文件管理器中定位凭据文件' }
+  })
 }
 
 function restartAutoCheck() {
@@ -3505,10 +3556,11 @@ async function bootstrap() {
   }
 
   const testOpen = process.env.DSH_DESKTOP_TEST_OPEN
-  if (testOpen === 'settings' || testOpen === 'diagnostics') {
+  if (testOpen === 'settings' || testOpen === 'diagnostics' || testOpen === 'providers') {
     setTimeout(() => {
       log(`[test] 打开工具窗口 ${testOpen}`)
       if (testOpen === 'settings') openSettingsWindow()
+      else if (testOpen === 'providers') openProvidersWindow()
       else openDiagnosticsWindow()
     }, Number(process.env.DSH_DESKTOP_TEST_OPEN_DELAY_MS || 1500))
   }
