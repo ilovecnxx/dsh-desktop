@@ -84,7 +84,6 @@ function buildApplicationMenu(ctx) {
           ],
         },
         { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => ctx.openSettings() },
-        { label: '第三方 API 接入…', click: () => ctx.openProviders() },
         { label: '重启客户端', click: () => ctx.restartApp() },
         { type: 'separator' },
         { label: '打开配置目录', click: () => ctx.openConfigDir() },

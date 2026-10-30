@@ -12,12 +12,6 @@ const ALLOWED = new Set([
   'settings:action',
   'diagnostics:get',
   'diagnostics:action',
-  'providers:get',
-  'providers:save',
-  'providers:delete',
-  'providers:test',
-  'providers:restart-service',
-  'providers:open-credentials',
 ])
 
 contextBridge.exposeInMainWorld('dshUtility', {

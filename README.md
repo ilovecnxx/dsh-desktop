@@ -196,7 +196,8 @@ sudo rm -f /usr/local/sbin/dsh-update /etc/sudoers.d/dsh-desktop-updater
 ## 版本与优化记录
 
 - 1.4.10：外部服务模式下自动拉起用户服务，避免启动卡 90 秒；详见 [OPTIMIZATION-1.4.10.md](OPTIMIZATION-1.4.10.md)
-- 1.6.0：第三方 API 接入（OpenAI/Anthropic/Kimi/自建兼容网关）；详见 [OPTIMIZATION-1.6.0.md](OPTIMIZATION-1.6.0.md)
+- 1.7.0：桌面端只负责显示，模型/API 配置交给 DSH 后台；修复 rc.5 插件兼容与开机双服务；详见 [OPTIMIZATION-1.7.0.md](OPTIMIZATION-1.7.0.md)
+- 1.6.0：第三方 API 接入（已移除，配置改由 DSH 后台管理）；历史见 [OPTIMIZATION-1.6.0.md](OPTIMIZATION-1.6.0.md)
 - 1.5.7：稳定性观察结束（0 异常）、root 按需启动同步 owner-sync；见 [migration.md](docs/migration.md)
 - 1.5.6：现代化文字/代码/命令行配色、设置窗口改版；详见 [OPTIMIZATION-1.5.6.md](OPTIMIZATION-1.5.6.md)
 - 1.5.5：状态胶囊、界面缩放与全屏、设置项优化；详见 [OPTIMIZATION-1.5.5.md](OPTIMIZATION-1.5.5.md)
